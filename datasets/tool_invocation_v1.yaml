@@ -1,0 +1,61 @@
+# Tool-invocation dataset — v1 seed.
+# Target: 20+ examples; current: 3 seeds. Scoring infrastructure for this
+# task type lands in Phase 5 (eval framework) — for Phase 4 this is here
+# to document the expected model output shape for the two v1 tools.
+
+dataset_name: tool_invocation_v1
+task_type: tool_invocation
+prompt_name: tool_invocation
+
+examples:
+  # ---- 1. Destructive create_ticket — confirmation expected ----------
+  - input: "Open a high-priority bug in ENG titled 'Auth memory leak' with a note about OOM kills."
+    expected_tool: jira_create_ticket
+    expected_parameters_contain:
+      project: "ENG"
+      issue_type: "bug"
+      priority: "high"
+    stub_response:
+      content:
+        action: "call_tool"
+        tool_call:
+          tool_name: "jira_create_ticket"
+          parameters:
+            project: "ENG"
+            issue_type: "bug"
+            title: "Auth memory leak"
+            description: "OOM kills observed after ~48h of operation."
+            priority: "high"
+            labels: ["memory-leak"]
+          requires_confirmation: true
+          confirmation_message: "I'll open a high-priority bug in ENG titled 'Auth memory leak'. Proceed?"
+        clarification_question: null
+        reasoning: "destructive op; confirmation required"
+
+  # ---- 2. Read-only lookup_status — no confirmation needed -----------
+  - input: "What's the status of ENG-4521?"
+    expected_tool: jira_lookup_status
+    expected_parameters_contain:
+      ticket_id: "ENG-4521"
+    stub_response:
+      content:
+        action: "call_tool"
+        tool_call:
+          tool_name: "jira_lookup_status"
+          parameters:
+            ticket_id: "ENG-4521"
+          requires_confirmation: false
+          confirmation_message: ""
+        clarification_question: null
+        reasoning: "read-only op"
+
+  # ---- 3. Clarification — missing required field --------------------
+  - input: "Send an update to Slack."
+    expected_tool: null
+    expected_clarification_contains: "channel"
+    stub_response:
+      content:
+        action: "clarify"
+        tool_call: null
+        clarification_question: "Which Slack channel should I post to, and what should the message say?"
+        reasoning: "channel and text are required for slack_send_message"

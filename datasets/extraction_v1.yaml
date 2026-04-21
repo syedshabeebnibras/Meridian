@@ -1,0 +1,96 @@
+# Structured extraction dataset — v1 seed.
+# Target: 20+ examples; current: 3 seeds with fixtures. Team expands from
+# production logs. Full scoring lands with the Phase 5 eval framework; for
+# Phase 4 these are here to validate the template renders and dispatches
+# correctly when wired through the evaluator's existing grounded_qa path.
+
+dataset_name: extraction_v1
+task_type: extraction
+prompt_name: extraction
+
+examples:
+  # ---- 1. SLA parameters from a contract -------------------------------
+  - input: "Extract the SLA fields from our Enterprise contract."
+    retrieved_docs:
+      - title: "Enterprise Contract Template"
+        url: "https://wiki.example.com/contract"
+        content: |
+          SLA: 99.95% monthly uptime. Support response: 30 minutes for P1,
+          2 hours for P2. Credits: 10% for SLA breach between 99.9-99.95%,
+          25% below 99.9%. Credit cap: 50% of monthly fee.
+        relevance: 0.96
+    expected_output:
+      reasoning: "Extracted directly from the contract template."
+      extracted:
+        uptime_percent: 99.95
+        p1_response_minutes: 30
+        p2_response_hours: 2
+        credit_tiers:
+          - threshold_percent: 99.9
+            credit_percent: 10
+          - threshold_percent: 99.85
+            credit_percent: 25
+        credit_cap_percent: 50
+    stub_response:
+      content:
+        reasoning: "Extracted directly from the contract template."
+        extracted:
+          uptime_percent: 99.95
+          p1_response_minutes: 30
+          p2_response_hours: 2
+          credit_tiers:
+            - threshold_percent: 99.9
+              credit_percent: 10
+            - threshold_percent: 99.85
+              credit_percent: 25
+          credit_cap_percent: 50
+
+  # ---- 2. Partial extraction — missing field returns null --------------
+  - input: "Extract the hardware specs from the onboarding guide."
+    retrieved_docs:
+      - title: "Engineering Onboarding Guide"
+        url: "https://wiki.example.com/onboarding"
+        content: "New hires get a MacBook Pro 16-inch with 32GB RAM. OS version is left to employee choice."
+        relevance: 0.9
+    expected_output:
+      reasoning: "Laptop model + RAM present; CPU not specified."
+      extracted:
+        laptop_model: "MacBook Pro 16-inch"
+        ram_gb: 32
+        cpu: null
+    stub_response:
+      content:
+        reasoning: "Laptop model + RAM present; CPU not specified."
+        extracted:
+          laptop_model: "MacBook Pro 16-inch"
+          ram_gb: 32
+          cpu: null
+
+  # ---- 3. Multi-doc synthesis → single structured object --------------
+  - input: "Give me the oncall schedule fields from the latest docs."
+    retrieved_docs:
+      - title: "On-Call Procedures 2026"
+        url: "https://wiki.example.com/oncall"
+        content: "Primary oncall: weekly rotation starting Monday 9am PT. Secondary: same schedule, different roster."
+        relevance: 0.92
+      - title: "Team Roster"
+        url: "https://wiki.example.com/roster"
+        content: "Team SRE has 6 members. Current oncall lead: Alice."
+        relevance: 0.85
+    expected_output:
+      reasoning: "Rotation + team size + lead pulled from two docs."
+      extracted:
+        rotation_cadence: "weekly"
+        rotation_start_day: "Monday"
+        rotation_start_time: "9am PT"
+        team_size: 6
+        current_lead: "Alice"
+    stub_response:
+      content:
+        reasoning: "Rotation + team size + lead pulled from two docs."
+        extracted:
+          rotation_cadence: "weekly"
+          rotation_start_day: "Monday"
+          rotation_start_time: "9am PT"
+          team_size: 6
+          current_lead: "Alice"
