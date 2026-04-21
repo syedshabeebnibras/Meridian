@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "meridian-contracts",
     "meridian-telemetry",
-    "meridian-guardrails",
+    "meridian-guardrails>=0.1.0",
     "meridian-output-validator",
     "meridian-prompt-assembler",
     "meridian-prompt-registry",

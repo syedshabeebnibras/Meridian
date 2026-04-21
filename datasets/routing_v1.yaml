@@ -1,0 +1,109 @@
+# Routing accuracy regression — Section 10 launch gate "routing accuracy ≥ 85%".
+#
+# 15 seed examples; team expands to the full 50 from production logs.
+# Exercises the tier-selection rules (Section 7 §Model routing logic).
+
+dataset_name: routing_v1
+task_type: classifier
+prompt_name: classifier
+
+examples:
+  # ---- Clearly simple lookups → small
+  - input: "What's today's date?"
+    expected_intent: out_of_scope
+    expected_tier: small
+    stub_response:
+      content: { intent: out_of_scope, confidence: 0.95, model_tier: small }
+
+  - input: "Lookup status of ENG-1200"
+    expected_intent: tool_action
+    expected_tier: small
+    stub_response:
+      content: { intent: tool_action, confidence: 0.9, model_tier: small }
+
+  # ---- Standard single-doc Q&A → mid
+  - input: "What's the vacation policy?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.9, model_tier: mid }
+
+  - input: "How do I request a new laptop?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.88, model_tier: mid }
+
+  - input: "What's the escalation contact for a P2 issue?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.92, model_tier: mid }
+
+  # ---- Standard extraction → mid
+  - input: "Extract the SLA uptime percentage from the Enterprise contract."
+    expected_intent: extraction
+    expected_tier: mid
+    stub_response:
+      content: { intent: extraction, confidence: 0.88, model_tier: mid }
+
+  - input: "Summarize the Q1 pricing changes into a table."
+    expected_intent: extraction
+    expected_tier: mid
+    stub_response:
+      content: { intent: extraction, confidence: 0.87, model_tier: mid }
+
+  # ---- Tool action → mid
+  - input: "Create a Jira ticket for the auth memory leak"
+    expected_intent: tool_action
+    expected_tier: mid
+    stub_response:
+      content: { intent: tool_action, confidence: 0.96, model_tier: mid }
+
+  - input: "Send a Slack update to #ops that the deploy is blocked"
+    expected_intent: tool_action
+    expected_tier: mid
+    stub_response:
+      content: { intent: tool_action, confidence: 0.94, model_tier: mid }
+
+  # ---- Complex multi-doc synthesis → classifier suggests mid but docs>3 forces frontier
+  # (route_tier handles the bump; the classifier should still emit mid)
+  - input: "Compare our SLA commitments across Enterprise, Pro, and Business tiers and summarize differences."
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.82, model_tier: mid }
+
+  # ---- Ambiguous → clarification (small)
+  - input: "What about that?"
+    expected_intent: clarification
+    expected_tier: small
+    stub_response:
+      content: { intent: clarification, confidence: 0.88, model_tier: small }
+
+  - input: "Can you redo that for me?"
+    expected_intent: clarification
+    expected_tier: small
+    stub_response:
+      content: { intent: clarification, confidence: 0.9, model_tier: small }
+
+  # ---- Out of scope → small
+  - input: "Hi, how's your weekend going?"
+    expected_intent: out_of_scope
+    expected_tier: small
+    stub_response:
+      content: { intent: out_of_scope, confidence: 0.96, model_tier: small }
+
+  # ---- Low-confidence grounded (should upgrade to mid/frontier via route_tier bump)
+  - input: "Is there a policy around when engineers can work from a coffee shop?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.7, model_tier: mid }
+
+  # ---- Policy lookup on a specific document
+  - input: "What's the data retention policy for customer logs?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.93, model_tier: mid }

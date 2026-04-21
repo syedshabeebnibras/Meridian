@@ -30,11 +30,16 @@ class GuardrailOutcome(BaseModel):
 
 
 class InputGuardrail(Protocol):
-    """Runs before the model sees user input."""
+    """Runs before the model sees user input.
+
+    Sync for consistency with the Phase 3 orchestrator. Async variants
+    can be added later if the pipeline needs to parallelise expensive
+    remote checks.
+    """
 
     name: str
 
-    async def check(self, text: str) -> GuardrailOutcome: ...
+    def check(self, text: str) -> GuardrailOutcome: ...
 
 
 class OutputGuardrail(Protocol):
@@ -42,4 +47,4 @@ class OutputGuardrail(Protocol):
 
     name: str
 
-    async def check(self, text: str, *, context: dict[str, str]) -> GuardrailOutcome: ...
+    def check(self, text: str, *, context: dict[str, str]) -> GuardrailOutcome: ...

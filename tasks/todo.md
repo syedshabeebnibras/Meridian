@@ -313,3 +313,77 @@ Per Section 4 contingency for A1: build the clients against the documented contr
 5. Live NDCG@5 measurement against internal golden set (Data Platform)
 
 ---
+
+## Phase 5 — Evals and Guardrails — status: done
+Date: 2026-04-21
+
+### Goals (from Section 12)
+Build the evaluation pipeline and guardrail system. Establish launch quality gates.
+
+### Exit criteria (from Section 12 + Section 10 launch gates)
+- All 8 launch gates pass: faithfulness ≥ 0.85, routing ≥ 85%, schema ≥ 99%, injection ≥ 90%, PII = 100%, p95 < 4s, cost < $0.02/req, refusal ≥ 90%
+- Guardrail false-positive rate < 5%
+- LLM-judge Cohen's κ > 0.6 against 50 human labels
+
+### External blockers
+| Dependency | Owner | Status |
+|---|---|---|
+| Presidio deployment (or local install) | Security/Platform | Needs provisioning |
+| Llama Guard 3 serving endpoint | Platform | Needs deployment |
+| Patronus Lynx API key + DPA | Security/Legal | Needs procurement |
+| 50 human-labeled eval examples | AI/Prompt Engineer + SMEs | Not started |
+| Golden dataset to 125 examples | AI/Prompt Engineer + SMEs | 25 seed |
+
+Code is built against the interfaces with `httpx.MockTransport` tests; live wiring of each service is a team-owned handoff before real launch gates can be measured.
+
+### Plan
+- [x] **1. Guardrail pipeline + stubs** — `GuardrailPipeline` with BLOCK>REDACT>PASS precedence, PassThrough stubs, regex PII detector, Llama Guard + Patronus HTTP clients (fail-open); 15 tests
+- [x] **2. Wire guardrails into orchestrator** — `input_guardrails` + `output_guardrails` injected; BLOCKED status wired; REDACT flows through; 4 integration tests
+- [x] **3. LLM-as-judge** — Faithfulness/Relevance/Pairwise judges + rubric YAMLs + Cohen's kappa helper; 11 tests
+- [x] **4. Shadow testing + online sampler** — `ShadowRunner` (95% non-regression gate) + `OnlineEvalSampler` (10% rate, EvaluationRecord output); 8 tests
+- [x] **5. Dataset expansion** — adversarial_v1 (15), pii_v1 (10), routing_v1 (15) at Section-10 targets
+- [x] **6. Launch-gate script** — `scripts/check_launch_gates.py` with all 8 Section-10 gates + kappa + FP-rate primitives
+- [x] **7. Docs + exit check** — `GUARDRAILS.md`, `EVALS.md`, README + todo updates, honest exit report below
+
+### Scope boundary (NOT in this phase)
+- Production deployment of Presidio/LlamaGuard/Patronus → team-owned
+- Dataset expansion to 125 full examples → team-owned (I seed the new categories)
+- 50 human labels for judge calibration → team-owned
+- Eval dashboards UI (Langfuse panels or custom React) → Phase 6 + team-owned
+- OTel span emission for eval traces → Phase 6
+
+### Review
+
+**Exit criteria verification (Section 12 + Section 10):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| 8 launch gates pass thresholds | ⚠️ on stubs | `scripts/check_launch_gates.py --client stub` reports **PASS** on all 8 gates. Every gate carries an explicit note about what requires live data. Real measurement requires (a) deployed Presidio/LlamaGuard/Patronus, (b) calibrated LLM-judge, (c) production traces flowing to `eval_results` — all Phase 7 staging deliverables |
+| Guardrail FP rate < 5% | ⚠️ infrastructure-only | Primitives to measure FP rate are in place (per-outcome tracking in `PipelineResult.outcomes`). Actual FP measurement needs labeled "known-good" data + production samples. Regex PII baseline has near-zero FP on the seed cases; Llama Guard / Patronus FP rates are vendor-reported until we run our own measurement |
+| LLM-judge κ > 0.6 | ⚠️ helper-only | `cohens_kappa()` implemented and tested; test `test_cohens_kappa_around_section_10_gate` demonstrates the > 0.6 case. **Actual calibration requires 50 human labels — team-owned deliverable** |
+
+**What shipped (149 tests total, all green; launch gates 8/8 PASS on stubs):**
+- **Guardrail pipeline** — `packages/guardrails/` with `GuardrailPipeline`, 3 stub/regex guardrails, 2 HTTP-client guardrails (Llama Guard + Patronus) with fail-open semantics; 15 tests
+- **Orchestrator integration** — `input_guardrails` + `output_guardrails` on `Orchestrator`; `OrchestratorStatus.BLOCKED`; REDACT flows through; `input_guardrail_result` + `output_guardrail_result` on the reply envelope; 4 integration tests
+- **LLM-as-judge** — `FaithfulnessJudge` + `RelevanceJudge` + `PairwiseJudge` with Section-10 rubrics as versioned YAMLs in `prompts/judge_*/`; `cohens_kappa()` helper; 11 tests
+- **Shadow + online** — `ShadowRunner` with 95% non-regression gate and latency tracking; `OnlineEvalSampler` with 10% rate + `EvaluationRecord` output; 8 tests
+- **Datasets** — `adversarial_v1` (15), `pii_v1` (10), `routing_v1` (15) — adversarial + PII at Section-10 targets; routing seed for team expansion to 50
+- **Launch-gate script** — `scripts/check_launch_gates.py` computing all 8 Section-10 gates, callable from CI and on-call; honest per-gate notes about stub vs. live
+- **Docs** — `GUARDRAILS.md` (pipeline + three-layer defense + adding new guardrails) and `EVALS.md` (rubrics + kappa + shadow + launch gates)
+
+**Beyond the plan:**
+- Regex PII as an always-on baseline — the plan specifies Presidio (which needs deployment); regex gives us meaningful PII defense from day one without waiting for platform provisioning
+- Fail-open semantics on HTTP guardrails — a Llama Guard outage returns `PASS` with `metadata.degraded=true` instead of blocking legitimate traffic; Phase 6 alerts on degraded-mode traffic
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Team-owned work before real Phase 5 sign-off:**
+1. Deploy Presidio service (or install the library in-process) — Platform / Security
+2. Deploy Llama Guard 3 serving endpoint — Platform
+3. Procure Patronus Lynx API key + DPA — Security + Legal
+4. Produce 50 human-labeled examples for judge calibration — AI/Prompt Engineer + SMEs
+5. Expand golden dataset to 125 examples (composition: 50 Q&A + 30 extraction + 20 tool + 15 adversarial ✓ + 10 faithfulness-critical) — AI/Prompt Engineer + SMEs
+6. Run `check_launch_gates.py --client live` once (1)-(5) are in place
+7. Decide on segment-level alerting thresholds for online evals (Section 10 mentions 0.8 faithfulness drop over 1h window)
+
+---

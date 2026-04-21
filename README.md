@@ -2,7 +2,7 @@
 
 Enterprise knowledge assistant. Grounded Q&A, structured extraction, and tool-driven workflows over internal documentation — see [`meridian-execution-plan.md`](./meridian-execution-plan.md) for the full production plan.
 
-**Status:** Phase 4 complete — HTTP retrieval client, schema-validated tool executor (Jira + Slack), extraction + tool-invocation prompt templates, and the orchestrator's tool-action branch (with confirmation flow) are all live. Real RAG endpoint / live Jira + Slack wiring is pending IT/DevOps provisioning (Phase 7 staging). Guardrails land in Phase 5.
+**Status:** Phase 5 complete — guardrail pipeline (regex PII + Llama Guard + Patronus Lynx clients), LLM-as-judge with Section-10 rubrics, shadow runner, online sampler, kappa calibration helper, and the launch-gate script are all live. 149 tests pass. Real Presidio / Llama Guard / Patronus deployments and the 50 human labels for judge calibration are Phase 7 staging deliverables (team-owned).
 
 ---
 
@@ -32,7 +32,7 @@ meridian/
 └── Makefile                   Everyday commands
 ```
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for the prompt-authoring flow, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle and resilience stack, and [`TOOLS.md`](./TOOLS.md) for the tool-execution framework.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for the prompt-authoring flow, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle and resilience stack, [`TOOLS.md`](./TOOLS.md) for the tool-execution framework, [`GUARDRAILS.md`](./GUARDRAILS.md) for the safety pipeline, and [`EVALS.md`](./EVALS.md) for the eval framework + launch gates.
 
 ---
 

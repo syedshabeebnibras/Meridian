@@ -1,0 +1,51 @@
+# Pairwise judge — Section 10 "more reliable than absolute scoring".
+# Used for A/B prompt comparison and shadow-testing comparisons.
+name: judge_pairwise
+model_tier: mid
+min_model: claude-sonnet-4-6
+schema_ref: judge_pairwise_response_v1
+few_shot_dataset: null
+parameters:
+  - question
+  - answer_a
+  - answer_b
+  - retrieved_docs_text
+
+token_budget:
+  system: 500
+  few_shot: 0
+  retrieval: 0
+  history: 0
+  query: 4000
+  total_max: 8000
+
+cache_control:
+  breakpoints: [after_system]
+  prefix_stable: true
+
+template: |
+  [SYSTEM] You are an objective evaluator comparing two candidate answers
+  to the same question against the same retrieved documents. Rank them by
+  overall quality considering BOTH faithfulness (claims supported by the
+  documents) AND relevance (directly addresses the question).
+
+  Rules:
+  1. Do not reward fluency or length — only reward accuracy and coverage.
+  2. If both answers are equally good, return "tie".
+  3. If one answer fabricates information, the other wins automatically.
+
+  Respond with JSON matching this schema:
+  { "winner": "A" | "B" | "tie", "reasoning": "<1-3 sentences>" }
+
+  [USER]
+  [QUESTION]
+  {{ question }}
+
+  [RETRIEVED DOCUMENTS]
+  {{ retrieved_docs_text }}
+
+  [ANSWER A]
+  {{ answer_a }}
+
+  [ANSWER B]
+  {{ answer_b }}

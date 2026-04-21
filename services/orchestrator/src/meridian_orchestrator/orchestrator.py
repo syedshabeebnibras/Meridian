@@ -44,6 +44,7 @@ from meridian_contracts import (
     ToolValidation,
     UserRequest,
 )
+from meridian_guardrails import GuardrailPipeline, PipelineResult
 from meridian_model_gateway import CircuitOpenError, ModelClient, ModelDispatchError
 from meridian_output_validator import OutputValidator, ValidationResult
 from meridian_prompt_assembler import Assembler, AssemblyContext
@@ -81,6 +82,8 @@ class OrchestratorReply(BaseModel):
     tool_invocation: ToolInvocation | None = None
     tool_result: ToolResult | None = None
     clarification_question: str | None = None
+    input_guardrail_result: PipelineResult | None = None
+    output_guardrail_result: PipelineResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +173,8 @@ class Orchestrator:
     retrieval: RetrievalClient
     model_client: ModelClient
     tool_executor: ToolExecutor | None = None  # None disables tool flow
+    input_guardrails: GuardrailPipeline | None = None
+    output_guardrails: GuardrailPipeline | None = None
     validator: OutputValidator = field(default_factory=OutputValidator)
     assembler: Assembler = field(default_factory=Assembler)
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
@@ -186,14 +191,30 @@ class Orchestrator:
         started = self.clock()
         timings = state.timings_ms
 
+        input_guardrail_result: PipelineResult | None = None
         try:
-            # ----- Input guardrails (pass-through for Phase 3) -----
+            # ----- Input guardrails -----
             state.current_state = OrchestratorPhase.INPUT_GUARDRAILS
+            effective_query = request.query
+            if self.input_guardrails is not None:
+                input_guardrail_result = self.input_guardrails.check_input(request.query)
+                if input_guardrail_result.is_blocked:
+                    state.current_state = OrchestratorPhase.FAILED
+                    timings.input_guardrails = self._stage_ms(started)
+                    timings.total = timings.input_guardrails
+                    return OrchestratorReply(
+                        request_id=request.request_id,
+                        status=OrchestratorStatus.BLOCKED,
+                        orchestration_state=state,
+                        input_guardrail_result=input_guardrail_result,
+                        error_message="Your request was blocked by an input safety check.",
+                    )
+                effective_query = input_guardrail_result.effective_text
             timings.input_guardrails = self._stage_ms(started)
 
             # ----- Classify -----
             state.current_state = OrchestratorPhase.CLASSIFIED
-            classification = self._classify(request.query)
+            classification = self._classify(effective_query)
             state.classification = classification
             timings.classification = self._stage_ms(started, previous=timings.input_guardrails)
 
@@ -217,7 +238,7 @@ class Orchestrator:
 
             # ----- Retrieve -----
             state.current_state = OrchestratorPhase.RETRIEVED
-            retrieval = self.retrieval.retrieve(request.query, top_k=10)
+            retrieval = self.retrieval.retrieve(effective_query, top_k=10)
             state.retrieval = RetrievalSummary(
                 query_rewritten=retrieval.query_rewritten,
                 chunks_retrieved=retrieval.total_chunks_retrieved,
@@ -244,7 +265,7 @@ class Orchestrator:
             )
             template = _override_tier(template, tier)
             context = AssemblyContext(
-                user_query=request.query,
+                user_query=effective_query,
                 retrieved_docs=retrieval.results,
                 conversation_history=list(request.conversation_history),
                 few_shot_examples=[],
@@ -282,8 +303,37 @@ class Orchestrator:
             state.current_state = OrchestratorPhase.VALIDATED
             timings.validation = self._stage_ms(started, previous=timings.dispatch_pending)
 
-            # ----- Output guardrails (pass-through) -----
+            # ----- Output guardrails -----
             state.current_state = OrchestratorPhase.OUTPUT_GUARDRAILS
+            output_guardrail_result: PipelineResult | None = None
+            if self.output_guardrails is not None:
+                answer_text = _extract_answer_text(model_response)
+                retrieved_blob = "\n".join(d.content for d in retrieval.results)
+                output_guardrail_result = self.output_guardrails.check_output(
+                    answer_text,
+                    context={
+                        "input_text": request.query,
+                        "retrieved_docs_text": retrieved_blob,
+                    },
+                )
+                if output_guardrail_result.is_blocked:
+                    state.current_state = OrchestratorPhase.FAILED
+                    timings.output_guardrails = self._stage_ms(started, previous=timings.validation)
+                    timings.total = self._stage_ms(started)
+                    return OrchestratorReply(
+                        request_id=request.request_id,
+                        status=OrchestratorStatus.BLOCKED,
+                        model_response=model_response,
+                        orchestration_state=state,
+                        validation=validation,
+                        input_guardrail_result=input_guardrail_result,
+                        output_guardrail_result=output_guardrail_result,
+                        error_message="Response was blocked by an output safety check.",
+                    )
+                if output_guardrail_result.was_redacted:
+                    model_response = _replace_answer(
+                        model_response, output_guardrail_result.effective_text
+                    )
             timings.output_guardrails = self._stage_ms(started, previous=timings.validation)
 
             # ----- Shape and return -----
@@ -297,6 +347,8 @@ class Orchestrator:
                 model_response=model_response,
                 orchestration_state=state,
                 validation=validation,
+                input_guardrail_result=input_guardrail_result,
+                output_guardrail_result=output_guardrail_result,
                 error_message=(
                     None if validation.valid else "output validation failed after corrective retry"
                 )
@@ -591,6 +643,23 @@ class Orchestrator:
             tool_invocation=invocation,
             tool_result=tool_result,
         )
+
+
+def _extract_answer_text(response: ModelResponse) -> str:
+    """Pull the natural-language answer out of a ModelResponse for guardrail scanning."""
+    content = response.content
+    if isinstance(content, dict):
+        return str(content.get("answer", ""))
+    return str(content)
+
+
+def _replace_answer(response: ModelResponse, new_answer: str) -> ModelResponse:
+    """Return a ModelResponse with the `answer` field replaced (for redaction)."""
+    content = response.content
+    if isinstance(content, dict):
+        new_content = {**content, "answer": new_answer}
+        return response.model_copy(update={"content": new_content})
+    return response.model_copy(update={"content": new_answer})
 
 
 def _parse_tool_response(response: ModelResponse) -> dict[str, Any]:

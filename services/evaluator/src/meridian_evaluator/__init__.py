@@ -12,6 +12,15 @@ from meridian_evaluator.datasets import (
     GoldenQAExample,
     load_dataset,
 )
+from meridian_evaluator.judges import (
+    FaithfulnessJudge,
+    JudgeScore,
+    PairwiseJudge,
+    PairwiseResult,
+    RelevanceJudge,
+    cohens_kappa,
+)
+from meridian_evaluator.online import OnlineEvalSampler, SampleDecision
 from meridian_evaluator.regressor import RegressionResult, RegressionRun, Regressor
 from meridian_evaluator.reports import render_markdown_report
 from meridian_evaluator.scorers import (
@@ -20,20 +29,32 @@ from meridian_evaluator.scorers import (
     Score,
     Scorer,
 )
+from meridian_evaluator.shadow import ShadowReport, ShadowRunner, ShadowTrial
 from meridian_evaluator.stub_client import StubModelClient
 
 __all__ = [
     "ClassifierExample",
     "ClassifierScorer",
     "Dataset",
+    "FaithfulnessJudge",
     "FaithfulnessScorer",
     "GoldenQAExample",
+    "JudgeScore",
+    "OnlineEvalSampler",
+    "PairwiseJudge",
+    "PairwiseResult",
     "RegressionResult",
     "RegressionRun",
     "Regressor",
+    "RelevanceJudge",
+    "SampleDecision",
     "Score",
     "Scorer",
+    "ShadowReport",
+    "ShadowRunner",
+    "ShadowTrial",
     "StubModelClient",
+    "cohens_kappa",
     "load_dataset",
     "render_markdown_report",
 ]

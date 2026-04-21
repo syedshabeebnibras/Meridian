@@ -1,0 +1,44 @@
+# Relevance judge — Section 10 rubric.
+# Scores how well the answer addresses the user's question.
+name: judge_relevance
+model_tier: mid
+min_model: claude-sonnet-4-6
+schema_ref: judge_relevance_response_v1
+few_shot_dataset: null
+parameters:
+  - question
+  - answer
+
+token_budget:
+  system: 400
+  few_shot: 0
+  retrieval: 0
+  history: 0
+  query: 2000
+  total_max: 6000
+
+cache_control:
+  breakpoints: [after_system]
+  prefix_stable: true
+
+template: |
+  [SYSTEM] You are an objective evaluator scoring an assistant's response on
+  relevance to the user's question. Use this rubric exactly:
+  - 1.0: Directly and completely answers the question.
+  - 0.75: Answers most of the question with minor gaps.
+  - 0.5: Partially addresses the question.
+  - 0.25: Tangentially related but doesn't answer the question.
+  - 0.0: Completely irrelevant.
+
+  A justified refusal ("I don't have enough information...") earns 0.75 when
+  appropriate, 0.25 when the answer is actually in the available context.
+
+  Respond with JSON matching this schema:
+  { "score": <float between 0 and 1>, "reasoning": "<1-3 sentences>" }
+
+  [USER]
+  [QUESTION]
+  {{ question }}
+
+  [ANSWER TO SCORE]
+  {{ answer }}
