@@ -1,0 +1,81 @@
+# LiteLLM gateway config — Section 19 D1/D2 (multi-provider via gateway).
+#
+# The three-tier cascade from Section 19 D4 maps to model aliases below:
+#   small    → fast classifier / out-of-scope triage
+#   mid      → grounded Q&A, extraction, tool invocations (v1 default)
+#   frontier → multi-doc synthesis / fallback for ambiguous cases
+#
+# Concrete model IDs use the latest Claude family (Opus 4.7, Sonnet 4.6,
+# Haiku 4.5) and OpenAI GPT-4o as the secondary provider. LiteLLM translates
+# each provider's native payload to the OpenAI-compatible schema we consume.
+
+model_list:
+  # --- small tier ---
+  - model_name: meridian-small
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      meridian_tier: small
+      priority: 1
+  - model_name: meridian-small
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      meridian_tier: small
+      priority: 2
+
+  # --- mid tier ---
+  - model_name: meridian-mid
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      meridian_tier: mid
+      priority: 1
+  - model_name: meridian-mid
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      meridian_tier: mid
+      priority: 2
+
+  # --- frontier tier ---
+  - model_name: meridian-frontier
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      meridian_tier: frontier
+      priority: 1
+  - model_name: meridian-frontier
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      meridian_tier: frontier
+      priority: 2
+
+litellm_settings:
+  # Retry + failover handled by LiteLLM for transparent multi-provider fallback.
+  num_retries: 2
+  request_timeout: 60
+  # Per-model routing — failover from priority 1 → priority 2 automatically.
+  fallbacks:
+    - meridian-small: ["meridian-mid"]
+    - meridian-mid: ["meridian-frontier"]
+  # Track costs — consumed by Meridian cost-accounting in Phase 6.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+environment_variables:
+  LANGFUSE_PUBLIC_KEY: os.environ/LANGFUSE_PUBLIC_KEY
+  LANGFUSE_SECRET_KEY: os.environ/LANGFUSE_SECRET_KEY
+  LANGFUSE_HOST: http://langfuse-web:3000

@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.10.12"
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Install dev deps only
+        run: uv sync --only-group dev
+      - name: Ruff check
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  typecheck:
+    name: Typecheck (mypy strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Mypy packages
+        run: |
+          uv run mypy \
+            -p meridian_contracts \
+            -p meridian_telemetry \
+            -p meridian_guardrails \
+            -p meridian_db \
+            -p meridian_orchestrator \
+            -p meridian_prompt_registry \
+            -p meridian_model_gateway \
+            -p meridian_retrieval_client \
+            -p meridian_tool_executor \
+            -p meridian_evaluator
+      - name: Mypy migrations
+        run: uv run mypy migrations
+
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: meridian
+          POSTGRES_PASSWORD: meridian
+          POSTGRES_DB: meridian
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U meridian -d meridian"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@localhost:5432/meridian
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Apply migrations
+        run: uv run --group migrations alembic upgrade head
+      - name: Pytest
+        run: uv run pytest -q --maxfail=1
+
+  regression:
+    name: Regression (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Classifier regression (stub client)
+        run: |
+          uv run python -m meridian_evaluator.cli \
+            --dataset datasets/classifier_v1.yaml \
+            --client stub --registry file \
+            --json-out classifier-result.json
+      - name: Grounded Q&A regression (stub client)
+        run: |
+          uv run python -m meridian_evaluator.cli \
+            --dataset datasets/grounded_qa_v1.yaml \
+            --client stub --registry file \
+            --json-out grounded-qa-result.json
+      - name: Upload regression results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results
+          path: "*-result.json"
+          retention-days: 14
+
+  contracts:
+    name: Contract JSON-Schema export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Export JSON Schemas
+        run: uv run python scripts/export_schemas.py --out ./build/schemas
+      - name: Upload schema artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meridian-json-schemas
+          path: build/schemas/
+          retention-days: 14
+
+  infra:
+    name: Infra sanity
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@localhost:5432/meridian
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: docker-compose config valid
+        run: docker compose config --quiet
+      - name: Alembic offline SQL generation
+        run: uv run --group migrations alembic upgrade --sql head > /tmp/init.sql
+      - name: Upload generated SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: init-sql
+          path: /tmp/init.sql
+          retention-days: 14

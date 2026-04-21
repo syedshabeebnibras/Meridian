@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+
+# uv
+.uv/
+
+# Environments and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docker volumes / local state
+.docker/
+volumes/
+postgres-data/
+redis-data/
+langfuse-data/
+
+# Logs
+*.log
+logs/
+
+# Generated CI artifacts
+build/
+
+# Alembic (keep migrations, ignore local artifacts)
+migrations/__pycache__/
+
+# OS
+Thumbs.db

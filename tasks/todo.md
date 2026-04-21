@@ -1,0 +1,315 @@
+# Task Log
+
+Active and historical task plans for the Meridian project. Every non-trivial task gets a plan here before implementation begins.
+
+---
+
+## Phase 1 — Architecture and Contracts — status: done
+Date: 2026-04-20
+
+### Goals (from Section 12)
+Finalize architecture, define all data contracts, establish CI/CD pipeline.
+
+### Exit criteria (from Section 12)
+- All contracts defined and reviewed
+- CI green
+- Infrastructure deployed to dev
+
+### Architectural decisions for this phase (from Section 19)
+| Decision | Choice | Source |
+|---|---|---|
+| Language | Python 3.12 (LiteLLM, Presidio, Langfuse SDK, Patronus are Python-first) | Ecosystem fit |
+| Monorepo tool | `uv` workspace (fast, modern, Ruff-authors' stack) | Ecosystem fit |
+| Contract DSL | Pydantic v2 (JSON-schema export, strict validation) | Standard for LLM contracts |
+| Orchestration pattern | Hand-rolled deterministic state machine, no framework | D5 — no LangGraph/Temporal for v1 |
+| Provider access | Self-hosted LiteLLM gateway (Anthropic + OpenAI) | D1, D2 |
+| Prompt storage | Postgres-backed registry, versioned, immutable rows | D3 |
+| Observability | Self-hosted Langfuse + OTel GenAI conventions | D9 |
+| Data layer | Postgres + pgvector, Redis | Section 5 |
+
+### Plan
+- [x] **1. Monorepo scaffold** — uv workspace; 6 services + 4 shared packages (`contracts`, `telemetry`, `guardrails`, `db`); root pyproject with ruff/mypy/pytest; `.python-version`
+- [x] **2. Data contracts as code** — 25 Pydantic v2 models (10 top-level + supporting sub-models); 20 round-trip tests against Section 8 payloads; `scripts/export_schemas.py` emits JSON-Schema
+- [x] **3. Infrastructure skeleton** — `docker-compose.yml` with Postgres+pgvector, Redis, LiteLLM, Langfuse v3 (web + worker + clickhouse + minio); `infra/litellm/config.yaml` with 3-tier × 2-provider routing; `.env.example`; `Makefile`
+- [x] **4. Postgres schema + Alembic** — `prompt_templates`, `prompt_activations`, `eval_results`, `audit_log` in migration `0001_initial_schema`; pgvector + pgcrypto extensions enabled
+- [x] **5. CI pipeline** — `.github/workflows/ci.yml` with 5 jobs: lint, typecheck, test, contracts (schema export artifact), infra (compose + alembic sql); uses astral-sh/setup-uv@v5
+- [x] **6. Docs + verify exit** — README.md, ARCHITECTURE.md, CONTRACTS.md written; exit criteria verified below
+
+### Scope boundary (what this phase does NOT do)
+- No actual LLM calls → Phase 2
+- No retrieval logic → Phase 4
+- No tool execution → Phase 4
+- No guardrail implementations → Phase 5
+- No eval scoring logic → Phase 5
+- No admin console UI → out of scope per Section 4
+
+### Open questions for the user
+1. **Cloud-target**: are we planning to deploy to a specific cloud later (AWS/GCP/Azure)? This affects IaC choices (Terraform module naming, for instance). For Phase 1 I'll keep it cloud-agnostic (docker-compose only) unless you say otherwise.
+2. **Secrets**: `.env.example` will placeholder `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `LANGFUSE_*`, `POSTGRES_*`, `REDIS_*`. Do you have real keys to drop in, or should everything run against LiteLLM in `mock` mode for now?
+3. **Git**: the repo isn't initialized as a git repo yet. I'll `git init` as part of step 1 unless you have a remote to clone from.
+
+### Review
+
+**Exit criteria verification (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| All contracts defined and reviewed | ✅ | 25 Pydantic models in `packages/contracts/`; 20 round-trip tests pass against Section 8 example payloads; every contract is `extra="forbid"` strict |
+| CI green | ✅ | `make check` passes: ruff clean on 25 files · mypy strict clean on 21 package + 2 migration files · 24/24 tests pass. `.github/workflows/ci.yml` has 5 jobs (lint, typecheck, test, contracts, infra) |
+| Infrastructure deployed to dev | ⚠️ | `docker compose config` validates; `alembic upgrade --sql head` produces 15 CREATE statements. **Not actually booted** — Docker daemon wasn't running on this machine. User should `make up && make migrate` once Docker Desktop is started |
+
+**What shipped beyond the plan:**
+- `packages/db/` (SQLAlchemy ORM + schema sanity tests) — not originally a separate deliverable, but extracting the models from `services/prompt-registry/` keeps the evaluator and orchestrator services from duplicating ORM code
+- `scripts/export_schemas.py` — CI artifact that downstream teams (RAG, frontend) can diff against their integration code
+- `CLAUDE.md` project operating manual (from the prior session)
+
+**Known non-blockers for Phase 2:**
+- Langfuse auto-seeds an org and project via `LANGFUSE_INIT_*` env vars, but real public/secret keys need to be generated from the Langfuse UI on first boot and dropped into `.env`
+- Azure OpenAI is declared in `.env.example` and `docker-compose.yml` but not in `litellm/config.yaml` — defer until a real need arises for a tertiary provider
+- No MyPy override for test files was necessary once `tests/__init__.py` was removed — pytest discovers tests via rootdir config
+
+**Lessons captured:** none worth adding to `tasks/lessons.md` yet — no user corrections during the phase.
+
+### Plan re-verification (2026-04-20, post-build)
+
+The execution plan was updated after Phase 1 shipped — file grew from 114KB → 146KB with **new sections 21-30 added** (agentic workflows, fine-tuned classifier, learned router, custom reranker, online learning/RLHF-lite, custom embeddings, speculative execution, self-improving evals, event-driven pipeline) and a **new Section 30 "Revised Timeline with Advanced Extensions"**.
+
+**Phase 1 impact: zero.**
+
+| Section | Checked | Finding |
+|---|---|---|
+| §12 Phase 1 entry | Verbatim re-read (lines 1438-1457) | Goals, tasks, deliverables, and exit criteria **unchanged** from what we built against |
+| §8 Data Contracts | Test suite + field-level check | 20/20 round-trip tests still pass — no fields added/removed in the 10 contracts |
+| §5 Architecture | Component grep | 15-component inventory unchanged |
+| §19 Tradeoffs | Subagent review | 9 decisions unchanged |
+| §21-30 (new) | Scanned | All new extensions are explicitly post-v1. Earliest start is "v1 + 30 days" per §30; every extension lists v1 stability / production data / eval pipeline as a hard prerequisite |
+
+**No Phase 1 code changes required.** The deterministic state machine, prompt registry, and 3-tier routing architecture all remain correct for v1 as originally built.
+
+**Forward-looking note:** §30 gives a clean dependency graph for post-v1 work (e.g., fine-tuned classifier needs 30 days of production data; agentic workflows needs stable v1 + budget controls). Worth revisiting after Phase 8 production launch.
+
+---
+
+## Phase 2 — Baseline Prompting System — status: done
+Date: 2026-04-20
+
+### Goals (from Section 12)
+Build the prompt registry, assembler, and first prompt templates. Achieve baseline Q&A quality.
+
+### Exit criteria (from Section 12)
+- Classifier accuracy ≥ 80% on 50-query test set
+- Q&A faithfulness ≥ 0.75 on 30-example golden set
+- Regression suite running in CI
+
+### Key architectural inputs (Section 6)
+| Concept | Design choice |
+|---|---|
+| Prompt taxonomy | 4 categories (system, workflow, few-shot, dynamic context) with separate owners |
+| Truncation priority | system → schema → few-shot → retrieval → history → query |
+| Cache split | items 1-3 = stable prefix · items 4-6 = volatile suffix; Anthropic cache_control breakpoints after system + after few-shot |
+| Versioning | immutable template rows + separate activation table; rollback = flip activation (Section 19 D3) |
+| Few-shot storage | Postgres-backed datasets, not hardcoded in templates; semantic retrieval deferred until >20 examples/task |
+| Token budgets | 8k (small) / 16k (mid) / 32k (frontier) |
+
+### Plan
+- [x] **1. Registry schema migration 0002** — `few_shot_examples`, `prompt_audit_log`; ORM + SQL verified against real Postgres
+- [x] **2. Prompt registry Python API** — `PromptRegistry` in `services/prompt-registry`; CRUD + activation + rollback; 9 integration tests pass against real Postgres
+- [x] **3. Prompt assembler package** — new `packages/prompt-assembler`; Jinja rendering + tiktoken budgeting + truncation priority + cache breakpoint emission; 10 unit tests
+- [x] **4. Seed prompt templates v1** — `prompts/classifier/v1.yaml`, `prompts/grounded_qa/v1.yaml` + idempotent `scripts/bootstrap_prompts.py` → `make bootstrap-prompts`
+- [x] **5. Regression runner** — `services/evaluator` with `Regressor`, `StubModelClient`, `ClassifierScorer`, `FaithfulnessScorer`; CLI + markdown/JSON reports; 6 tests
+- [x] **6. Initial labeled datasets** — `datasets/classifier_v1.yaml` (12 examples) + `datasets/grounded_qa_v1.yaml` (7 examples); format documented in REGRESSION.md
+- [x] **7. CI regression + docs + exit check** — `.github/workflows/ci.yml` has `regression` and Postgres-backed `test` jobs; `PROMPTS.md` + `REGRESSION.md` written; exit criteria verified below
+
+### Scope boundary (NOT doing this phase)
+- Orchestration state machine end-to-end → Phase 3
+- Real retrieval integration → Phase 4
+- Tool invocation templates → Phase 4
+- Extraction template → Phase 4
+- Guardrails → Phase 5
+- Semantic few-shot retrieval via pgvector → defer until >20 examples per task type (Section 6)
+- Full 50/30 labeled datasets — will seed fewer and document the format; full sets need team/domain input
+
+### Open risks
+- Exit-criteria metrics (accuracy / faithfulness) require live LLM calls against a real API. If Docker/LiteLLM aren't booted, I can ship the harness + a small seed dataset and mark metric verification as "pending live run" with clear instructions.
+- Q&A faithfulness judge prompt is itself a prompt that needs calibration (Phase 5 does the real kappa > 0.6 calibration). For Phase 2 I'll ship a reasonable v1 judge and flag it as provisional.
+
+### Review
+
+**Exit criteria verification (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Classifier accuracy ≥ 80% on test set | ⚠️ partial | Harness hits 100% on the **12-example offline stub** dataset. Real-model measurement against the 50-example target dataset is **pending live run** (`make regression` with `--client live`) and dataset expansion to 50 by the team |
+| Q&A faithfulness ≥ 0.75 on golden set | ⚠️ partial | Harness hits 100% on the **7-example offline stub** dataset. Real-model measurement against the 30-example target dataset is **pending live run** and dataset expansion by the team. Faithfulness judge is a **provisional** heuristic (citation coverage + hallucination penalty); Phase 5 calibrates a real LLM judge to kappa > 0.6 |
+| Regression suite running in CI | ✅ | `.github/workflows/ci.yml` `regression` job runs both datasets offline on every PR; `test` job runs pytest against a Postgres service container |
+
+**What shipped:**
+- **Registry** — `PromptRegistry` API with immutable versioned rows, separate `prompt_activations` table for atomic rollback, full audit trail in `prompt_audit_log`. 9 integration tests against real Postgres (pass 100%).
+- **Assembler** — `packages/prompt-assembler` with Jinja template rendering, tiktoken budgeting, per-section truncation priority (Section 6), and cache breakpoint hints. 10 unit tests.
+- **Templates** — `classifier_v1` (small tier) and `grounded_qa_v1` (mid tier) as YAML files in `prompts/`, loaded idempotently via `make bootstrap-prompts`. Classifier wired to the 5-category taxonomy from Section 6.
+- **Model gateway client** — minimal `LiteLLMClient` in `services/model-gateway` over the OpenAI-compatible `/v1/chat/completions` endpoint. Phase 3 layers retry/failover/instrumentation on top.
+- **Regression runner** — `services/evaluator` with `Regressor`, `StubModelClient`, two scorers, CLI with threshold exit codes. Markdown + JSON reports.
+- **Seed datasets** — 12 classifier + 7 Q&A examples with retrieved-doc fixtures and canned responses for offline runs.
+- **CI** — new `regression` job, Postgres service container on the `test` job.
+- **Docs** — `PROMPTS.md` (authoring flow) and `REGRESSION.md` (harness + dataset format).
+
+**Beyond the plan:**
+- Discovered and fixed a plan inconsistency: Section 6 lists classifier categories `grounded_qa / extraction / tool_action / clarification / out_of_scope` while Section 5 and the original `Intent` enum said `... / chitchat`. Aligned the enum to Section 6 (the detailed design).
+- `packages/db` and `services/model-gateway` were scaffolds in Phase 1; Phase 2 grew them into working code rather than waiting for their dedicated phases — they were blockers for this one.
+
+**Lessons captured:** none yet — no user corrections during the phase.
+
+**Honest outstanding work before a real Phase 2 sign-off:**
+1. Expand `datasets/classifier_v1.yaml` from 12 → 50 labeled examples
+2. Expand `datasets/grounded_qa_v1.yaml` from 7 → 30 with retrieved-doc fixtures sourced from real runbooks
+3. Run `make regression` with `--client live` against a booted LiteLLM + real API keys
+4. Confirm the live numbers hit ≥ 80% / ≥ 0.75
+5. Tune templates if they don't; otherwise promote them to prod activation
+
+Items 1–4 are team-owned (dataset labelling + live API access). Item 5 is iterative prompt work, expected per Section 12 Phase 2 risks ("prompt quality iteration takes longer than expected").
+
+---
+
+## Phase 3 — Orchestration Engine v1 — status: done
+Date: 2026-04-20
+
+### Goals (from Section 12)
+Build the core orchestration state machine, model routing, and fallback hierarchy.
+
+### Exit criteria (from Section 12)
+- End-to-end request flow works with mock retrieval
+- Failover tested with simulated provider outage
+- p95 latency < 4s on test queries
+
+### Key architectural inputs (Section 7)
+| Concept | Design choice |
+|---|---|
+| State machine | 10 phases, deterministic, no loops; error states per stage |
+| Model routing | classifier → tier; confidence<0.6 refuse · 0.6–0.85 upgrade · ≥0.85 keep |
+| Fallback chain | Anthropic → OpenAI → Azure → cache/"unavailable" |
+| Retry | 429 → 3/exp+jitter(1,3,9) · 5xx → 2/(2,6) · 4xx → 0 · schema → 1 corrective |
+| Timeouts | stage-specific, 45s total ceiling |
+| Circuit breakers | provider (3 fail/60s) · cost (150% daily) · latency (3x baseline/5min) |
+| Tool invocation | Phase 4 — orchestrator only stubs the extension point |
+
+### Plan
+- [x] **1. Mock retrieval client** — `MockRetrievalClient` + YAML loader; 5 tests
+- [x] **2. Gateway retry + circuit breaker** — `RetryingClient` + `CircuitBreaker` + `resilient_client()` factory; 11 tests exercising every Section 7 policy row
+- [x] **3. Output validator** — schema (jsonschema) + citation + refusal + length + format; 12 tests
+- [x] **4. Orchestrator state machine** — sync `Orchestrator` over 10 phases, 1 corrective retry, typed `OrchestratorReply`
+- [x] **5. Failover + degraded mode** — retry layer + `CircuitOpenError` → `OrchestratorStatus.DEGRADED`
+- [x] **6. E2E integration tests + latency check** — 7 tests: happy path, refusal, tier bump, corrective retry, 429 failover, degraded, p95 < 4s
+- [x] **7. Docs + exit-criteria check** — `ORCHESTRATION.md`, README pointer, review below
+
+### Scope boundary (NOT doing this phase)
+- Real guardrails → Phase 5 (we pass through)
+- Real RAG → Phase 4 (we mock)
+- Real tool execution → Phase 4 (orchestrator stubs the hook)
+- Full cost/latency circuit breakers with prod telemetry → Phase 6 (stubbed)
+- Production streaming SSE UX → keeping streaming optional; focus on sync flow
+- Semantic response cache → deferred; degraded mode is direct "unavailable" message
+
+### Open risks
+- The p95 < 4s exit criterion is meaningful on live traffic but trivial with stubs. I'll measure on stub runs to confirm no accidental delays, and flag that live measurement belongs to Phase 7 staging.
+- Provider failover code is hard to exercise without actually hitting each provider. I'll simulate via a fake transport and mark the real-provider failover test as a Phase 7 staging deliverable.
+
+### Review
+
+**Exit criteria verification (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| E2E request flow works with mock retrieval | ✅ | `test_end_to_end_happy_path`: classifier → MockRetrieval → assembler → scripted model → validator → SHAPED → COMPLETED with `valid=True`. Orchestration state has `chunks_retrieved=2`, intent=grounded_qa, citations verified |
+| Failover tested with simulated provider outage | ✅ | `test_failover_retries_transient_429s`: 2× 429 → retry layer recovers → OK reply on attempt 3. `test_degraded_mode_when_circuit_is_open`: breaker opens → `OrchestratorStatus.DEGRADED` with "temporarily unavailable" message. 11 retry/circuit tests cover the full policy table |
+| p95 latency < 4s on test queries | ✅ on stubs | `test_p95_latency_under_four_seconds`: 20 runs, p95 well under 0.2s. **Live p95 measurement is a Phase 7 staging deliverable** — this test guards orchestration code paths, not real provider latency |
+
+**What shipped (5 new modules, 91 tests total, all green):**
+- **Mock retrieval** — `MockRetrievalClient` with YAML fixtures and a `RetrievalClient` Protocol for Phase 4's drop-in swap
+- **Resilient gateway** — `RetryingClient` (Section 7 retry table with injectable sleep/rng for deterministic tests) + `CircuitBreaker` (CLOSED/OPEN/HALF_OPEN with injectable clock) + `resilient_client()` factory
+- **Output validator** — `packages/output-validator` with jsonschema + citation + refusal + length checks; returns `ValidationResult` with per-issue severities
+- **Orchestrator** — `services/orchestrator`: `Orchestrator` class, `OrchestratorReply` envelope, `OrchestratorStatus` (ok/refused/blocked/degraded/failed), `TemplateProvider` abstraction, `OrchestratorConfig` with per-stage timeout budgets, `_override_tier` helper
+- **Routing** — `route_tier()` implementing all Section 7 decision rules (refusal threshold, tier bump, doc-count override, forced small for out_of_scope/clarification)
+- **14 orchestrator tests** covering every branch
+
+**Beyond the plan:**
+- `OrchestratorReply` envelope isn't in Section 8 contracts — it's an orchestrator-local type. Phase 6 can add an API-layer wire format on top; the internal envelope stays stable.
+- Kept everything sync for Phase 3. The plan mentions async + streaming — deferred to Phase 6 per the open-risks note.
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Honest outstanding work:**
+1. Live p95 measurement needs real LiteLLM + real Anthropic/OpenAI latency — Phase 7 staging.
+2. Streaming SSE support — scoped to Phase 6 per the open-risks note.
+3. Telemetry hooks (OTel spans) are no-ops in Phase 3 — Phase 6 wires them via `meridian_telemetry.semconv`.
+
+---
+
+## Phase 4 — Retrieval and Tools Integration — status: done
+Date: 2026-04-20
+
+### Goals (from Section 12)
+Integrate with the RAG pipeline and implement the tool execution framework.
+
+### Exit criteria (from Section 12)
+- Grounded Q&A works with real retrieved documents
+- Tool invocations execute successfully
+- Retrieval NDCG@5 ≥ 0.7 (owned by Data Platform team; Meridian verifies consumption)
+
+### External blockers
+| Dependency | Owner | Status |
+|---|---|---|
+| RAG pipeline endpoint | Data Platform | In development |
+| Jira service account + API token | IT/DevOps | Needs provisioning |
+| Slack bot token | IT/DevOps | Needs provisioning |
+
+Per Section 4 contingency for A1: build the clients against the documented contract, test against mock transports, flag live wiring as a team-owned handoff.
+
+### Plan
+- [x] **1. HTTP retrieval client** — `HttpRetrievalClient` + `ThresholdingClient`; 5 tests via `httpx.MockTransport`
+- [x] **2. Tool executor framework** — `Tool` Protocol, `ToolRegistry`, `ToolExecutor` with jsonschema validation + confirmation + max-2 cap; 8 tests
+- [x] **3. Jira + Slack tools** — `JiraCreateTicketTool`, `JiraLookupStatusTool`, `SlackSendMessageTool`; 4 tests
+- [x] **4. Extraction + tool-invocation templates** — `prompts/extraction/v1.yaml` + `prompts/tool_invocation/v1.yaml`
+- [x] **5. Orchestrator tool flow** — new `_handle_tool_action` branch; `OrchestratorStatus.PENDING_CONFIRMATION`; `ToolInvocation` / `ToolResult` / `clarification_question` on `OrchestratorReply`
+- [x] **6. Regression datasets** — seed `extraction_v1.yaml` (3 examples) + `tool_invocation_v1.yaml` (3 examples); full scorers deferred to Phase 5 eval framework
+- [x] **7. E2E + docs + exit check** — 5 tool-flow E2E tests; `TOOLS.md`; README updated; exit criteria below
+
+### Scope boundary (NOT in this phase)
+- Real guardrails → Phase 5
+- Full eval LLM-judge → Phase 5
+- Real RAG / real Jira-Slack endpoint wiring → team-owned handoff (Phase 7 staging)
+- Streaming + async orchestrator → Phase 6
+
+### Review
+
+**Exit criteria verification (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Grounded Q&A works with real retrieved documents | ✅ on contract, ⚠️ live-wired | `HttpRetrievalClient` speaks the Section 8 contract end-to-end — 5 tests exercise parse/auth/5xx/threshold paths via `httpx.MockTransport`. Real RAG endpoint wiring is **pending Data Platform provisioning** (Section 4 Dependencies). Drop `RAG_BASE_URL` into `.env` and swap `MockRetrievalClient` for `HttpRetrievalClient` at orchestrator construction — no code changes required |
+| Tool invocations execute successfully | ✅ | 5 E2E tool-flow tests: read-only Jira lookup executes without confirmation; destructive Jira create + Slack send go through PENDING_CONFIRMATION → confirmed → OK; unknown tools fail validation; clarification branch returns `OrchestratorStatus.OK` with a question. Live Jira/Slack endpoints **pending IT/DevOps credentials** |
+| Retrieval NDCG@5 ≥ 0.7 | ⚠️ external | NDCG is owned by the RAG pipeline team. Meridian verifies it correctly *consumes* whatever the upstream ranker returns — `ThresholdingClient` tests prove the orchestrator respects the scores. The actual NDCG measurement is a Data Platform deliverable against their golden eval set |
+
+**What shipped (113 tests total, all green):**
+- **HTTP retrieval** — `HttpRetrievalClient` parses the Section 8 contract; `ThresholdingClient` filters sub-threshold chunks; `RetrievalDispatchError` wraps all failure modes
+- **Tool framework** — `Tool` Protocol, `ToolRegistry` allowlist, `ToolExecutor` with jsonschema Draft 2020-12 validation + confirmation gate + per-request call cap; four typed error classes
+- **Three tools** — `JiraCreateTicketTool` (destructive), `JiraLookupStatusTool` (read-only), `SlackSendMessageTool` (destructive) with injectable `httpx.Client` for test transport
+- **Two prompts** — `extraction/v1.yaml` (Section 6 p. 416) and `tool_invocation/v1.yaml` (Section 6 p. 432), bootstrap-compatible
+- **Orchestrator tool branch** — `_handle_tool_action` routes `TOOL_ACTION` intent through the tool_invocation template, parses the model's action (call_tool / clarify), validates, and either returns `PENDING_CONFIRMATION` or executes
+- **5 tool-flow E2E tests** covering read-only, two destructive confirmation flows, unknown-tool validation, clarification branch
+- **Seed datasets** for extraction + tool_invocation — full scorer integration is Phase 5 eval-framework work
+- **`TOOLS.md`** — framework docs + new-tool checklist + security notes
+
+**Beyond the plan:**
+- `ThresholdingClient` as a composable wrapper (rather than a config knob on the HTTP client) — keeps each responsibility in its own type and makes the "no retrieval → refuse" path explicit
+- Stateless confirmation flow (client round-trips `metadata.confirmed="yes"`) — documented in TOOLS.md; Redis session memory in Phase 6 can short-circuit the second LLM call
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Team-owned work before a real Phase 4 sign-off:**
+1. RAG endpoint URL + API token → `.env` (Data Platform)
+2. Jira service account + API token → `.env` (IT/DevOps)
+3. Slack bot token + install in target workspace (IT/DevOps)
+4. Extend regression datasets to 20+ examples each as production data accumulates (Phase 5 eval framework)
+5. Live NDCG@5 measurement against internal golden set (Data Platform)
+
+---

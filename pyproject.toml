@@ -1,0 +1,120 @@
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "Meridian — Enterprise Knowledge Assistant (prompting + orchestration layer)"
+requires-python = ">=3.12"
+readme = "README.md"
+
+# Root project is a meta-package that depends on every workspace member so
+# `uv sync` from the root pulls the whole monorepo into one virtualenv.
+dependencies = [
+    "meridian-contracts",
+    "meridian-telemetry",
+    "meridian-guardrails",
+    "meridian-db",
+    "meridian-output-validator",
+    "meridian-prompt-assembler",
+    "meridian-orchestrator",
+    "meridian-prompt-registry",
+    "meridian-model-gateway",
+    "meridian-retrieval-client",
+    "meridian-tool-executor",
+    "meridian-evaluator",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "types-PyYAML>=6.0",
+    "types-jsonschema>=4.23",
+]
+migrations = [
+    "alembic>=1.14.0",
+    "meridian-db",
+]
+bootstrap = [
+    "meridian-prompt-registry",
+    "meridian-contracts",
+    "pyyaml>=6.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "services/*",
+]
+
+[tool.uv.sources]
+meridian-contracts         = { workspace = true }
+meridian-telemetry         = { workspace = true }
+meridian-guardrails        = { workspace = true }
+meridian-db                = { workspace = true }
+meridian-output-validator  = { workspace = true }
+meridian-prompt-assembler  = { workspace = true }
+meridian-orchestrator      = { workspace = true }
+meridian-prompt-registry   = { workspace = true }
+meridian-model-gateway     = { workspace = true }
+meridian-retrieval-client  = { workspace = true }
+meridian-tool-executor     = { workspace = true }
+meridian-evaluator         = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle + pyflakes
+    "I",              # isort
+    "B",              # bugbear
+    "UP",             # pyupgrade
+    "SIM",            # simplify
+    "RUF",            # ruff-specific
+    "N",              # pep8-naming
+]
+ignore = [
+    "E501",  # line-too-long (ruff format handles this)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# mypy — strict where it matters
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+# Meridian uses a src-layout workspace; call mypy in package mode (`-p name`)
+# via `make type` to avoid double-discovery of source files.
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["packages", "services"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["packages", "services"]

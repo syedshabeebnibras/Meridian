@@ -1,0 +1,234 @@
+"""SQLAlchemy ORM models for Meridian application state.
+
+Three concerns addressed here:
+
+  1. Prompt registry (Section 19 D3) — versioned, immutable templates with a
+     separate activation table so rollback is a row update, not a DDL event.
+  2. Evaluation records (Section 10) — offline + online + golden runs.
+  3. Audit log (Section 9 reliability/safety) — every request/response
+     traceable for compliance.
+
+Vector columns for the Phase 2 semantic cache are declared here so the
+pgvector extension is loaded on the initial migration, but the semantic-cache
+table itself is added in Phase 2.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Any, ClassVar
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    type_annotation_map: ClassVar[dict[Any, Any]] = {
+        dict[str, Any]: JSONB,
+        list[str]: JSONB,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Prompt registry
+# ---------------------------------------------------------------------------
+class PromptTemplateRow(Base):
+    """Immutable prompt template version (Section 19 D3).
+
+    A row is never mutated after creation. New behaviour = new row with
+    version+1. Activation is managed by the PromptActivation table.
+    """
+
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="uq_prompt_name_version"),
+        CheckConstraint("version >= 1", name="ck_prompt_version_pos"),
+        Index("ix_prompt_templates_name", "name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_tier: Mapped[str] = mapped_column(String(16), nullable=False)
+    min_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    template: Mapped[str] = mapped_column(Text, nullable=False)
+    parameters: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    schema_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    few_shot_dataset: Mapped[str | None] = mapped_column(String(128))
+    token_budget: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    cache_control: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    eval_results: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+
+    activations: Mapped[list[PromptActivation]] = relationship(
+        back_populates="template", cascade="all, delete-orphan"
+    )
+
+
+class PromptActivation(Base):
+    """Which prompt version is live in which environment.
+
+    Splitting activation out lets rollback be atomic: flip the active row to
+    an earlier template_id and the Prompt Registry serves the previous
+    version on the next request, no code deploy required (Section 19 D3).
+    """
+
+    __tablename__ = "prompt_activations"
+    __table_args__ = (
+        Index("ix_prompt_activations_env_status", "environment", "status"),
+        CheckConstraint("canary_percentage BETWEEN 0 AND 100", name="ck_activation_canary_range"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prompt_templates.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    canary_percentage: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    activated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    template: Mapped[PromptTemplateRow] = relationship(back_populates="activations")
+
+
+# ---------------------------------------------------------------------------
+# Evaluation records
+# ---------------------------------------------------------------------------
+class EvalResultRow(Base):
+    """Persisted EvaluationRecord (Section 8 + Section 10)."""
+
+    __tablename__ = "eval_results"
+    __table_args__ = (
+        Index("ix_eval_results_request", "request_id"),
+        Index("ix_eval_results_type_ts", "eval_type", "timestamp"),
+        Index("ix_eval_results_prompt_version", "prompt_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    eval_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    eval_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scores: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    judge_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    judge_prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    golden_answer: Mapped[str | None] = mapped_column(Text)
+    human_label: Mapped[str | None] = mapped_column(Text)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_used: Mapped[str] = mapped_column(String(128), nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)
+    passed: Mapped[bool | None] = mapped_column(Boolean)
+
+
+# ---------------------------------------------------------------------------
+# Few-shot example library (Section 6 — Few-shot example management)
+# ---------------------------------------------------------------------------
+class FewShotExampleRow(Base):
+    """One curated example in a few-shot dataset.
+
+    Examples are versioned at the dataset level (e.g. `grounded_qa_examples_v1`)
+    and referenced from PromptTemplateRow.few_shot_dataset. Semantic-similarity
+    retrieval via pgvector is deferred to Phase 5 (Section 6 — activates when a
+    dataset exceeds 20 examples per task type).
+    """
+
+    __tablename__ = "few_shot_examples"
+    __table_args__ = (
+        Index("ix_fewshot_dataset_task", "dataset_name", "task_type"),
+        UniqueConstraint("dataset_name", "input_query", name="uq_fewshot_dataset_input"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    input_query: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="medium")
+    source: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prompt audit log (Section 6 — Rollback process)
+# ---------------------------------------------------------------------------
+class PromptAuditLog(Base):
+    """Append-only record of registry mutations.
+
+    Separate from the request-level AuditLog below: this tracks *prompt*
+    events (create / activate / rollback) for change management, not user
+    traffic. Every action that changes what the registry serves writes a row
+    here with the acting user and free-form reason.
+    """
+
+    __tablename__ = "prompt_audit_log"
+    __table_args__ = (Index("ix_prompt_audit_name_ts", "prompt_name", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    prompt_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    from_version: Mapped[int | None] = mapped_column(Integer)
+    to_version: Mapped[int | None] = mapped_column(Integer)
+    environment: Mapped[str | None] = mapped_column(String(32))
+    actor: Mapped[str] = mapped_column(String(256), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
+class AuditLog(Base):
+    """Append-only request/response audit trail for compliance."""
+
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_request", "request_id"),
+        Index("ix_audit_user_ts", "user_id", "created_at"),
+        Index("ix_audit_event_type", "event_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String(128))
+    session_id: Mapped[str | None] = mapped_column(String(128))
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# Re-export so Alembic's autogenerate sees a single metadata object to diff.
+metadata = Base.metadata
+# JSON is referenced in some CI paths that lack the postgres dialect; keep the
+# import alive so ruff doesn't flag it as unused.
+_ = JSON
