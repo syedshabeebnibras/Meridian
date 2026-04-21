@@ -1,0 +1,197 @@
+# Grounded Q&A regression dataset — v1 seed.
+#
+# Target: 30 golden examples (Section 12, Phase 2 exit criteria).
+# Current: 7 examples. The team should expand to 30 using production logs
+# plus curated runbooks from SRE.
+#
+# The retrieved_docs list is a fixture substituting for the real RAG
+# pipeline (Phase 4). Each stub_response mimics a faithful, cited answer.
+
+dataset_name: grounded_qa_v1
+task_type: grounded_qa
+prompt_name: grounded_qa
+system_vars:
+  company_name: Meridian Labs
+
+examples:
+  # ---- 1. P1 escalation (full multi-doc citation) ------------------------
+  - input: "What is the escalation procedure for a P1 database outage?"
+    retrieved_docs:
+      - title: "Incident Response Runbook v4.2"
+        url: "https://wiki.example.com/ir-runbook"
+        content: |
+          For P1 incidents, the on-call SRE must be paged immediately via
+          PagerDuty. Open an incident channel in Slack named
+          #inc-YYYY-MM-DD. Notify the VP of Engineering within 15 minutes
+          when the outage affects more than 10% of customers.
+        relevance: 0.95
+      - title: "On-Call Procedures 2026"
+        url: "https://wiki.example.com/oncall"
+        content: |
+          Status updates must be posted to the incident channel every 15
+          minutes until resolution. The incident commander is the on-call
+          SRE unless otherwise delegated.
+        relevance: 0.88
+    golden_answer: |
+      For a P1 database outage: page the on-call SRE via PagerDuty
+      immediately, open an #inc-YYYY-MM-DD channel, notify the VP of
+      Engineering within 15 minutes if >10% of customers are affected, and
+      post status updates every 15 minutes.
+    expected_citations:
+      - "Incident Response Runbook v4.2"
+      - "On-Call Procedures 2026"
+    stub_response:
+      content:
+        reasoning: "DOC-1 covers escalation steps; DOC-2 covers status cadence."
+        answer: |
+          For a P1 database outage: page the on-call SRE via PagerDuty
+          [DOC-1], open an #inc-YYYY-MM-DD Slack channel [DOC-1], notify the
+          VP of Engineering within 15 minutes if >10% of customers are
+          affected [DOC-1], and post status updates every 15 minutes until
+          resolution [DOC-2].
+        citations:
+          - doc_index: 1
+            source_title: "Incident Response Runbook v4.2"
+            relevant_excerpt: "paged immediately via PagerDuty"
+          - doc_index: 2
+            source_title: "On-Call Procedures 2026"
+            relevant_excerpt: "every 15 minutes until resolution"
+        confidence: 0.93
+        needs_escalation: false
+
+  # ---- 2. SLA lookup (single doc) ---------------------------------------
+  - input: "What are the uptime commitments for the Enterprise tier?"
+    retrieved_docs:
+      - title: "Enterprise SLA 2026"
+        url: "https://wiki.example.com/enterprise-sla"
+        content: |
+          The Enterprise tier commits to 99.95% uptime measured monthly,
+          with 15-minute credit tiers for breaches below 99.9%.
+        relevance: 0.97
+    golden_answer: "The Enterprise tier commits to 99.95% monthly uptime, with credits for breaches below 99.9%."
+    expected_citations:
+      - "Enterprise SLA 2026"
+    stub_response:
+      content:
+        reasoning: "DOC-1 states the uptime commitment directly."
+        answer: "The Enterprise tier commits to 99.95% monthly uptime, with 15-minute credit tiers for breaches below 99.9% [DOC-1]."
+        citations:
+          - doc_index: 1
+            source_title: "Enterprise SLA 2026"
+            relevant_excerpt: "99.95% uptime measured monthly"
+        confidence: 0.95
+        needs_escalation: false
+
+  # ---- 3. Policy lookup --------------------------------------------------
+  - input: "How long do we retain customer log data?"
+    retrieved_docs:
+      - title: "Data Retention Policy"
+        url: "https://wiki.example.com/retention"
+        content: |
+          Customer log data is retained for 90 days in hot storage and a
+          further 275 days in cold storage, for a total of 365 days.
+        relevance: 0.96
+    golden_answer: "Customer log data is retained for a total of 365 days (90 hot, 275 cold)."
+    expected_citations:
+      - "Data Retention Policy"
+    stub_response:
+      content:
+        reasoning: "DOC-1 states the retention split."
+        answer: "Customer log data is retained for 90 days in hot storage and 275 days in cold storage, totaling 365 days [DOC-1]."
+        citations:
+          - doc_index: 1
+            source_title: "Data Retention Policy"
+            relevant_excerpt: "a total of 365 days"
+        confidence: 0.94
+        needs_escalation: false
+
+  # ---- 4. Justified refusal (no answer in docs) --------------------------
+  - input: "What was the outcome of the last security audit?"
+    retrieved_docs:
+      - title: "Engineering Onboarding Guide"
+        url: "https://wiki.example.com/onboarding"
+        content: "New hires complete VPN setup, SSO enrollment, and laptop provisioning in week one."
+        relevance: 0.35
+    golden_answer: ""
+    expected_citations: []
+    stub_response:
+      content:
+        reasoning: "No retrieved doc addresses the security audit."
+        answer: "I don't have enough information to answer this reliably. Try searching the Security team's Confluence space or asking in #security-questions."
+        citations: []
+        confidence: 0.35
+        needs_escalation: false
+
+  # ---- 5. Multi-doc synthesis -------------------------------------------
+  - input: "What are the steps to deploy a new microservice to staging?"
+    retrieved_docs:
+      - title: "Deployment Runbook"
+        url: "https://wiki.example.com/deploy"
+        content: "Build the service image in CI. Tag it with the git SHA. Push to the internal registry."
+        relevance: 0.9
+      - title: "Service Intake Checklist"
+        url: "https://wiki.example.com/intake"
+        content: "Every new service needs an entry in services.yaml and a dedicated PagerDuty rotation."
+        relevance: 0.82
+    golden_answer: "Build and tag the image in CI, push it to the registry, add the service to services.yaml, and set up a PagerDuty rotation."
+    expected_citations:
+      - "Deployment Runbook"
+      - "Service Intake Checklist"
+    stub_response:
+      content:
+        reasoning: "DOC-1 covers build/push; DOC-2 covers intake prerequisites."
+        answer: "Build the service image in CI and tag it with the git SHA, push to the internal registry [DOC-1], add the service to services.yaml, and set up a PagerDuty rotation [DOC-2]."
+        citations:
+          - doc_index: 1
+            source_title: "Deployment Runbook"
+            relevant_excerpt: "Push to the internal registry"
+          - doc_index: 2
+            source_title: "Service Intake Checklist"
+            relevant_excerpt: "dedicated PagerDuty rotation"
+        confidence: 0.9
+        needs_escalation: false
+
+  # ---- 6. Contract detail (precise citation required) --------------------
+  - input: "What's the cap on consulting hours in the Pro tier?"
+    retrieved_docs:
+      - title: "Pro Tier Contract Template"
+        url: "https://wiki.example.com/pro-contract"
+        content: "Pro tier includes 20 consulting hours per quarter, with additional hours billed at $250/hr."
+        relevance: 0.98
+    golden_answer: "20 consulting hours per quarter."
+    expected_citations:
+      - "Pro Tier Contract Template"
+    stub_response:
+      content:
+        reasoning: "DOC-1 states the cap explicitly."
+        answer: "The Pro tier includes 20 consulting hours per quarter; additional hours are billed at $250/hr [DOC-1]."
+        citations:
+          - doc_index: 1
+            source_title: "Pro Tier Contract Template"
+            relevant_excerpt: "20 consulting hours per quarter"
+        confidence: 0.95
+        needs_escalation: false
+
+  # ---- 7. Ambiguous doc (low confidence, needs escalation) ---------------
+  - input: "Which team owns the legacy billing migration?"
+    retrieved_docs:
+      - title: "Team Ownership Matrix (draft)"
+        url: "https://wiki.example.com/teams"
+        content: |
+          Billing services are owned by the Revenue Platform team; the
+          migration may be co-owned with the Legacy Systems team — see
+          migration plan (link missing).
+        relevance: 0.72
+    golden_answer: "Revenue Platform, possibly co-owned with Legacy Systems — escalate to confirm."
+    expected_citations:
+      - "Team Ownership Matrix (draft)"
+    stub_response:
+      content:
+        reasoning: "DOC-1 names two possible owners; confidence is limited."
+        answer: "The Revenue Platform team owns billing services, and the migration may be co-owned with the Legacy Systems team [DOC-1]. I recommend confirming with the Revenue Platform lead before acting."
+        citations:
+          - doc_index: 1
+            source_title: "Team Ownership Matrix (draft)"
+            relevant_excerpt: "co-owned with the Legacy Systems team"
+        confidence: 0.6
+        needs_escalation: true

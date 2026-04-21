@@ -1,0 +1,92 @@
+# Classifier regression dataset — v1 seed.
+#
+# Target: 50 labeled examples (Section 12, Phase 2 exit criteria).
+# Current: 12 examples. The team should expand to 50 using production logs.
+#
+# Each example has a `stub_response` so CI can run offline. The stub returns
+# what a correctly-behaving classifier would output. When running against a
+# live LiteLLM instance the stub is ignored.
+#
+# Format: see REGRESSION.md
+
+dataset_name: classifier_v1
+task_type: classifier
+prompt_name: classifier
+
+examples:
+  # ---- grounded_qa (factual lookups) -------------------------------------
+  - input: "What is the escalation procedure for a P1 database outage?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.95, model_tier: mid }
+
+  - input: "Where do I find the on-call rotation schedule for next week?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.92, model_tier: mid }
+
+  - input: "What are our SLA terms for the Enterprise tier?"
+    expected_intent: grounded_qa
+    expected_tier: mid
+    stub_response:
+      content: { intent: grounded_qa, confidence: 0.9, model_tier: mid }
+
+  # ---- extraction --------------------------------------------------------
+  - input: "Summarize the key pricing fields from the Acme contract into a table."
+    expected_intent: extraction
+    expected_tier: mid
+    stub_response:
+      content: { intent: extraction, confidence: 0.88, model_tier: mid }
+
+  - input: "Extract every commitment date mentioned in the Q2 roadmap doc."
+    expected_intent: extraction
+    expected_tier: mid
+    stub_response:
+      content: { intent: extraction, confidence: 0.91, model_tier: mid }
+
+  # ---- tool_action -------------------------------------------------------
+  - input: "Create a Jira ticket for the auth service memory leak we discussed."
+    expected_intent: tool_action
+    expected_tier: mid
+    stub_response:
+      content: { intent: tool_action, confidence: 0.97, model_tier: mid }
+
+  - input: "Send a Slack message to #inc-db-outage with the current status."
+    expected_intent: tool_action
+    expected_tier: mid
+    stub_response:
+      content: { intent: tool_action, confidence: 0.94, model_tier: mid }
+
+  - input: "Look up the status of ENG-4521."
+    expected_intent: tool_action
+    expected_tier: small
+    stub_response:
+      content: { intent: tool_action, confidence: 0.9, model_tier: small }
+
+  # ---- clarification -----------------------------------------------------
+  - input: "Can you help me with the thing from yesterday?"
+    expected_intent: clarification
+    expected_tier: small
+    stub_response:
+      content: { intent: clarification, confidence: 0.82, model_tier: small }
+
+  - input: "What about it?"
+    expected_intent: clarification
+    expected_tier: small
+    stub_response:
+      content: { intent: clarification, confidence: 0.86, model_tier: small }
+
+  # ---- out_of_scope ------------------------------------------------------
+  - input: "Hi, how are you today?"
+    expected_intent: out_of_scope
+    expected_tier: small
+    stub_response:
+      content: { intent: out_of_scope, confidence: 0.93, model_tier: small }
+
+  - input: "What's the weather like in New York right now?"
+    expected_intent: out_of_scope
+    expected_tier: small
+    stub_response:
+      content: { intent: out_of_scope, confidence: 0.9, model_tier: small }
