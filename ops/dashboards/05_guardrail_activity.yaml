@@ -1,0 +1,24 @@
+name: Guardrail Activity
+audience: [security_engineer]
+panels:
+  - name: Input guardrail trigger rate
+    type: timeseries
+    query: rate(input_guardrail.decision="block"[5m]) + rate(input_guardrail.decision="redact"[5m])
+    unit: req/s
+  - name: Output guardrail trigger rate
+    type: timeseries
+    query: rate(output_guardrail.decision="block"[5m]) + rate(output_guardrail.decision="redact"[5m])
+    unit: req/s
+  - name: Injection detections (per hour)
+    type: timeseries
+    query: sum(increase(llama_guard.categories="injection"[1h]))
+    unit: count
+  - name: PII detections by entity
+    type: table
+    query: count(regex_pii.entities) by (entity)
+    unit: count
+  - name: Guardrail FP rate
+    type: gauge
+    query: count(guardrail.false_positive) / count(guardrail.decision!="pass")
+    unit: "%"
+    threshold: {warn: 0.05, crit: 0.10}

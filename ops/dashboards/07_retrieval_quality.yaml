@@ -1,0 +1,20 @@
+name: Retrieval Quality
+audience: [ai_engineer, data_platform]
+panels:
+  - name: Top-1 relevance score (avg)
+    type: timeseries
+    query: avg(meridian.retrieval.top_relevance_score)
+    unit: score
+  - name: Chunks used per request
+    type: timeseries
+    query: avg(meridian.retrieval_chunks_used)
+    unit: count
+  - name: Rerank lift (top-5 relevance gain)
+    type: timeseries
+    query: avg(retrieval.rerank_score - retrieval.relevance_score)
+    unit: delta
+  - name: Zero-result rate
+    type: timeseries
+    query: sum(rate(retrieval.chunks_retrieved=0[5m])) / sum(rate(retrieval[5m]))
+    unit: "%"
+    threshold: {warn: 0.10, crit: 0.20}

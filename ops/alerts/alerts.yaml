@@ -1,0 +1,84 @@
+# Meridian alerts — Section 11 §Top 10 alerts.
+# Each alert has a trigger (metric expression), severity (P1/P2/P3),
+# action (what on-call should do), and a pointer to the runbook.
+
+alerts:
+  - id: 01_high_error_rate
+    name: High error rate
+    severity: P1
+    condition: rate(meridian.request.status!="ok"[5m]) > 0.05
+    duration: 5m
+    action: Page on-call; check provider health.
+    runbook: ops/runbooks/provider-outage.md
+
+  - id: 02_latency_spike
+    name: Latency spike (p95)
+    severity: P2
+    condition: histogram_quantile(0.95, rate(meridian.request.duration_ms_bucket[5m])) > 8000
+    duration: 10m
+    action: Investigate provider latency; consider model downgrade.
+    runbook: ops/runbooks/latency-spike.md
+
+  - id: 03_provider_circuit_open
+    name: Provider circuit breaker open
+    severity: P2
+    condition: circuit_breaker.state="open"
+    duration: 1m
+    action: Verify failover is working; check provider status page.
+    runbook: ops/runbooks/provider-outage.md
+
+  - id: 04_faithfulness_drop
+    name: Faithfulness score drop
+    severity: P2
+    condition: avg_over_time(eval_results.scores.faithfulness[1h]) < 0.8
+    duration: 1h
+    action: Review recent prompt/model changes; consider rollback.
+    runbook: ops/runbooks/faithfulness-drop.md
+
+  - id: 05_pii_leakage
+    name: PII leakage detected
+    severity: P1
+    condition: sum(rate(output_guardrail.code="citation_hallucination" OR rate(regex_pii.output.leaked > 0)[5m])) > 0
+    duration: 1m
+    action: Immediate investigation; potential incident declaration.
+    runbook: ops/runbooks/pii-leakage.md
+
+  - id: 06_injection_spike
+    name: Injection attempt spike
+    severity: P3
+    condition: rate(llama_guard.categories="injection"[1h]) > 3 * baseline(1h)
+    duration: 1h
+    action: Security review; potential targeted attack.
+    runbook: ops/runbooks/pii-leakage.md  # also used for safety incidents
+
+  - id: 07_daily_cost_overrun
+    name: Daily cost exceeds 150% of budget
+    severity: P2
+    condition: sum_over_time(meridian.cost_usd[1d]) > 1.5 * daily_budget_usd
+    duration: 5m
+    action: Activate cost circuit breaker; review routing; escalate to leadership if 2x.
+    runbook: ops/runbooks/cost-spike.md
+
+  - id: 08_regression_failure
+    name: Nightly regression suite failure
+    severity: P3
+    condition: regression.pass_rate < 0.90
+    duration: 1m
+    action: Freeze prompt changes; investigate quality drift.
+    runbook: ops/runbooks/faithfulness-drop.md
+
+  - id: 09_cache_hit_drop
+    name: Cache hit rate drop
+    severity: P3
+    condition: sum(rate(meridian.cache_hit!="none"[1h])) / sum(rate(model_dispatch[1h])) < 0.50
+    duration: 1h
+    action: Investigate cache invalidation; check prompt prefix stability.
+    runbook: ops/runbooks/latency-spike.md
+
+  - id: 10_zero_retrieval_spike
+    name: Zero-result retrieval rate spike
+    severity: P3
+    condition: sum(rate(retrieval.chunks_retrieved=0[30m])) / sum(rate(retrieval[30m])) > 0.20
+    duration: 30m
+    action: Check RAG pipeline health; verify vector index.
+    runbook: ops/runbooks/faithfulness-drop.md  # closest mapping — retrieval quality impacts faithfulness

@@ -47,7 +47,9 @@ type:  ## Mypy strict typecheck (installed packages + migrations)
 	  -p meridian_contracts \
 	  -p meridian_telemetry \
 	  -p meridian_guardrails \
+	  -p meridian_cost_accounting \
 	  -p meridian_db \
+	  -p meridian_session_store \
 	  -p meridian_output_validator \
 	  -p meridian_prompt_assembler \
 	  -p meridian_orchestrator \

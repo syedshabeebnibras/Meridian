@@ -1,0 +1,23 @@
+name: Incident & Anomaly
+audience: [on_call, tech_lead]
+panels:
+  - name: Error spike detection (z-score)
+    type: timeseries
+    query: zscore(rate(meridian.request.status="error"[5m]), baseline=1h)
+    unit: z
+    threshold: {warn: 2.5, crit: 3.5}
+  - name: Latency anomaly (p95 vs 7d baseline)
+    type: timeseries
+    query: latency_p95[5m] / latency_p95[7d]
+    unit: ratio
+    threshold: {warn: 2.0, crit: 3.0}
+  - name: Cost anomaly (hourly spend vs 7d baseline)
+    type: timeseries
+    query: sum(meridian.cost_usd[1h]) / avg(sum(meridian.cost_usd[1h])[7d])
+    unit: ratio
+    threshold: {warn: 1.5, crit: 2.0}
+  - name: Guardrail activity anomaly
+    type: timeseries
+    query: rate(input_guardrail.decision="block"[1h]) / baseline(1h, 7d)
+    unit: ratio
+    threshold: {warn: 3.0, crit: 5.0}

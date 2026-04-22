@@ -1,0 +1,16 @@
+[project]
+name = "meridian-cost-accounting"
+version = "0.1.0"
+description = "Per-request cost tracking + per-user daily budgets + cost circuit breaker."
+requires-python = ">=3.12"
+dependencies = [
+    "meridian-contracts",
+    "pydantic>=2.10.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meridian_cost_accounting"]

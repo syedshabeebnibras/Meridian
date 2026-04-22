@@ -1,0 +1,31 @@
+name: Meridian Service Health
+audience: [on_call, engineering]
+description: Top-of-stack SLO dashboard for the orchestrator.
+panels:
+  - name: Availability
+    type: gauge
+    query: sum(rate(meridian.request.status="ok"[5m])) / sum(rate(meridian.request[5m]))
+    unit: "%"
+    threshold: {warn: 99.5, crit: 99.0}
+  - name: Error rate
+    type: timeseries
+    query: rate(meridian.request.status!="ok"[5m])
+    unit: req/s
+    threshold: {warn: 0.02, crit: 0.05}
+  - name: Latency p50
+    type: timeseries
+    query: histogram_quantile(0.50, rate(meridian.request.duration_ms_bucket[5m]))
+    unit: ms
+  - name: Latency p95
+    type: timeseries
+    query: histogram_quantile(0.95, rate(meridian.request.duration_ms_bucket[5m]))
+    unit: ms
+    threshold: {warn: 4000, crit: 8000}
+  - name: Latency p99
+    type: timeseries
+    query: histogram_quantile(0.99, rate(meridian.request.duration_ms_bucket[5m]))
+    unit: ms
+  - name: Throughput
+    type: timeseries
+    query: rate(meridian.request[5m])
+    unit: req/s

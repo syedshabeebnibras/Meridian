@@ -1,0 +1,24 @@
+name: Model Performance
+audience: [ai_engineer, platform]
+panels:
+  - name: Latency by model
+    type: timeseries
+    query: avg(meridian.model_dispatch.duration_ms) by (gen_ai.request.model)
+    unit: ms
+  - name: Success rate by provider
+    type: gauge
+    query: sum(rate(model_dispatch.status="ok"[5m])) by (gen_ai.system) / sum(rate(model_dispatch[5m])) by (gen_ai.system)
+    unit: "%"
+  - name: Cache hit rate
+    type: timeseries
+    query: sum(rate(meridian.cache_hit!="none"[5m])) / sum(rate(model_dispatch[5m]))
+    unit: "%"
+    threshold: {warn: 0.5, crit: 0.3}
+  - name: Input tokens per request
+    type: timeseries
+    query: avg(gen_ai.usage.input_tokens)
+    unit: tokens
+  - name: Output tokens per request
+    type: timeseries
+    query: avg(gen_ai.usage.output_tokens)
+    unit: tokens

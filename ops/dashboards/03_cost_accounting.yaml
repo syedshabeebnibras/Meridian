@@ -1,0 +1,22 @@
+name: Cost Accounting
+audience: [engineering_leadership, platform]
+panels:
+  - name: Daily spend
+    type: timeseries
+    query: sum(meridian.cost_usd)
+    unit: usd
+  - name: Monthly spend vs budget ($12K)
+    type: gauge
+    query: sum_over_time(meridian.cost_usd[30d]) / 12000
+    unit: "%"
+    threshold: {warn: 0.75, crit: 0.95}
+  - name: Cost per request by tier
+    type: timeseries
+    query: avg(meridian.cost_usd) by (meridian.model_tier)
+    unit: usd
+    threshold: {warn: 0.02, crit: 0.05}
+  - name: Frontier usage share
+    type: gauge
+    query: sum(meridian.model_tier="frontier") / sum(meridian.request)
+    unit: "%"
+    threshold: {warn: 0.10, crit: 0.20}

@@ -1,0 +1,19 @@
+name: Provider Health
+audience: [platform, on_call]
+panels:
+  - name: Latency by provider
+    type: timeseries
+    query: avg(model_dispatch.duration_ms) by (gen_ai.system)
+    unit: ms
+  - name: Error rate by provider
+    type: timeseries
+    query: rate(model_dispatch.status="error"[5m]) by (gen_ai.system)
+    unit: req/s
+    threshold: {warn: 0.01, crit: 0.05}
+  - name: Circuit breaker state
+    type: table
+    query: circuit_breaker.state by (gen_ai.system)
+  - name: Failover events (per hour)
+    type: timeseries
+    query: sum(increase(meridian.provider_attempt > 1[1h]))
+    unit: count

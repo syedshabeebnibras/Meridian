@@ -1,0 +1,21 @@
+name: User Engagement
+audience: [product_manager, tech_lead]
+panels:
+  - name: Daily active users
+    type: timeseries
+    query: count_distinct(meridian.request_id, meridian.user_id)
+    unit: users
+  - name: Queries per user per day
+    type: timeseries
+    query: count(meridian.request) by (meridian.user_id)
+    unit: req
+  - name: Session length (turns)
+    type: timeseries
+    query: avg(count(meridian.request) by (meridian.session_id))
+    unit: turns
+  - name: Feedback distribution
+    type: table
+    query: count(feedback) by (feedback.verdict)
+  - name: Top query categories
+    type: table
+    query: count(meridian.request) by (meridian.intent)

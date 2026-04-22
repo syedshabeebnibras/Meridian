@@ -1,0 +1,18 @@
+name: Prompt Version Performance
+audience: [ai_prompt_engineer]
+panels:
+  - name: Active version per template
+    type: table
+    query: prompt_activations{status="active"} by (prompt_name, version)
+  - name: Canary traffic share
+    type: timeseries
+    query: sum(rate(meridian.prompt_version=~".*_canary"[5m])) / sum(rate(meridian.prompt_version[5m]))
+    unit: "%"
+  - name: Faithfulness by prompt version
+    type: timeseries
+    query: avg(eval_results.scores.faithfulness) by (meridian.prompt_version)
+    unit: score
+  - name: Latency by prompt version
+    type: timeseries
+    query: avg(meridian.request.duration_ms) by (meridian.prompt_version)
+    unit: ms

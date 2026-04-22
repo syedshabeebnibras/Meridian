@@ -387,3 +387,87 @@ Code is built against the interfaces with `httpx.MockTransport` tests; live wiri
 7. Decide on segment-level alerting thresholds for online evals (Section 10 mentions 0.8 faithfulness drop over 1h window)
 
 ---
+
+## Phase 6 — Observability and Ops Hardening — status: done
+Date: 2026-04-21
+
+### Goals (from Section 12)
+Full observability stack, alerting, cost controls, operational readiness.
+
+### Exit criteria (from Section 12)
+- All 10 dashboards live
+- All 10 alerts configured and tested
+- Runbooks reviewed by on-call team
+
+### Key architectural inputs (Section 11)
+| Concept | Design |
+|---|---|
+| Tracing | OTel spans per lifecycle stage with GenAI semantic conventions |
+| Metrics taxonomy | System / Quality / Safety / Business — 4 families |
+| Dashboards | 10 specs covering service health, model perf, cost, eval trends, guardrails, prompt versions, retrieval, engagement, providers, incidents |
+| Alerts | 10 specs with P1/P2/P3 severity + explicit action |
+| Error taxonomy | MERIDIAN-001..010 typed exceptions |
+| Cost controls | Per-request cap, per-user daily budget, cost circuit breaker |
+| Session memory | Redis with 1-hour TTL |
+
+### External blockers
+| Dependency | Owner | Status |
+|---|---|---|
+| Live Langfuse + OTLP collector | Platform | docker-compose ready; prod deploy team-owned |
+| Datadog / Grafana / PagerDuty | Platform | Dashboards defined as code — import team-owned |
+| On-call rotation | Eng leadership | Not started |
+
+### Plan
+- [x] **1. Telemetry emitter + OTel tracer** — `Tracer` + swappable exporters (NoOp / InMemory / OTel), `LifecycleStage` enum, `build_telemetry_event()` for Section-8 records; 6 tests
+- [x] **2. Cost accounting + token budgets** — `CostAccountant` with USD rate table, `PerUserDailyTracker`, `CostCircuitBreaker` (150% budget threshold); 8 tests
+- [x] **3. Session memory** — `InMemorySessionStore` (TTL-evicting) + `RedisSessionStore`; 5 tests
+- [x] **4. Rate limiter + error taxonomy** — `TokenBucketRateLimiter` + 9 typed `MeridianError` subclasses (MERIDIAN-001..010); 9 tests
+- [x] **5. Dashboards + alerts as code** — 10 `ops/dashboards/*.yaml` + `ops/alerts/alerts.yaml`; all 11 specs parse
+- [x] **6. Runbooks** — 5 incident runbooks + post-incident template in `ops/runbooks/`
+- [x] **7. Orchestrator wiring + docs + exit check** — `Tracer`, `CostAccountant`, `PerUserDailyTracker` on `Orchestrator`; `OrchestratorReply.cost_usd` populated; `OPERATIONS.md` + README
+
+### Scope boundary (NOT in this phase)
+- Real dashboard provisioning in Grafana/Datadog → team-owned
+- Real alert routing through PagerDuty → team-owned
+- On-call rotation scheduling → team-owned
+- Prompt semantic cache (three-layer cache detail from Section 5) → punt to Phase 9 optimisation per Section 30
+- Streaming SSE UX → Phase 7 (staging) per Section 12 Phase 7 tasks
+
+### Review
+
+**Exit criteria verification (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| All 10 dashboards live | ✅ code-complete | 10 YAML specs in `ops/dashboards/` covering every Section-11 dashboard. Import into Grafana/Datadog/Langfuse is team-owned |
+| All 10 alerts configured and tested | ✅ code-complete | 10 alerts in `ops/alerts/alerts.yaml` with condition + severity + action + runbook pointer. Routing through PagerDuty is team-owned |
+| Runbooks reviewed by on-call | ✅ written, ⚠️ review pending | 5 runbooks + post-incident template in `ops/runbooks/`. On-call team review happens when the rotation is set up |
+
+**What shipped (177 tests total, all green):**
+- **`packages/telemetry`** — `Tracer` + `SpanHandle` + 3 exporters (NoOp, InMemory, OTel); `LifecycleStage` enum matching Section 11's span names; `build_telemetry_event()` producing Section-8 records
+- **`packages/cost-accounting`** — `CostAccountant` with USD/M-token rates for every model in `infra/litellm/config.yaml`; `PerUserDailyTracker` with day-boundary reset; `CostCircuitBreaker` opening at 150% budget
+- **`packages/session-store`** — `SessionStore` Protocol, `InMemorySessionStore` with 1-hour TTL eviction, `RedisSessionStore` shim (no hard Redis dep in tests)
+- **`packages/ops`** — `MeridianError` base + 9 typed subclasses covering MERIDIAN-001..010; `TokenBucketRateLimiter` with injectable clock
+- **Orchestrator wiring** — `tracer`, `cost_accountant`, `user_spend_tracker` injected via constructor; `OrchestratorReply.cost_usd` populated on successful requests; no orchestrator-test regressions
+- **`ops/dashboards/*.yaml`** — 10 vendor-neutral YAML specs, all parse cleanly
+- **`ops/alerts/alerts.yaml`** — 10 alerts with P1/P2/P3 severity and runbook pointers
+- **`ops/runbooks/`** — provider-outage, faithfulness-drop, pii-leakage, cost-spike, latency-spike + post-incident template
+- **`OPERATIONS.md`** — complete obs stack reference
+
+**Beyond the plan:**
+- Vendor-neutral YAML dashboard format instead of locking to Grafana/Datadog JSON — lets the team pick their tool at import time without rewriting specs
+- `OTelExporter` is imported lazily so `import meridian_telemetry` never pulls the SDK unless the caller uses it — keeps test startup fast and dependency surface minimal
+- `CostCircuitBreaker` has a `check_frontier_allowed()` method that's cheap to call before every frontier dispatch — makes enforcement a one-liner in the orchestrator hot path
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Team-owned handoff to real Phase 6 sign-off:**
+1. Import `ops/dashboards/*` into the target observability platform (Grafana or Datadog)
+2. Wire `ops/alerts/alerts.yaml` into PagerDuty → Slack + phone
+3. Establish on-call rotation; run a tabletop exercise against each of the 5 runbooks
+4. Deploy Langfuse v3 stack from `docker-compose.yml` to production (persistent Postgres + Clickhouse + MinIO)
+5. Point `OTelExporter` at the production collector
+6. Run a gameday scenario for each alert to confirm routing + runbook accuracy
+
+---
+

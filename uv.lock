@@ -11,15 +11,18 @@ resolution-markers = [
 members = [
     "meridian",
     "meridian-contracts",
+    "meridian-cost-accounting",
     "meridian-db",
     "meridian-evaluator",
     "meridian-guardrails",
     "meridian-model-gateway",
+    "meridian-ops",
     "meridian-orchestrator",
     "meridian-output-validator",
     "meridian-prompt-assembler",
     "meridian-prompt-registry",
     "meridian-retrieval-client",
+    "meridian-session-store",
     "meridian-telemetry",
     "meridian-tool-executor",
 ]
@@ -633,15 +636,18 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "meridian-contracts" },
+    { name = "meridian-cost-accounting" },
     { name = "meridian-db" },
     { name = "meridian-evaluator" },
     { name = "meridian-guardrails" },
     { name = "meridian-model-gateway" },
+    { name = "meridian-ops" },
     { name = "meridian-orchestrator" },
     { name = "meridian-output-validator" },
     { name = "meridian-prompt-assembler" },
     { name = "meridian-prompt-registry" },
     { name = "meridian-retrieval-client" },
+    { name = "meridian-session-store" },
     { name = "meridian-telemetry" },
     { name = "meridian-tool-executor" },
 ]
@@ -670,15 +676,18 @@ migrations = [
 [package.metadata]
 requires-dist = [
     { name = "meridian-contracts", editable = "packages/contracts" },
+    { name = "meridian-cost-accounting", editable = "packages/cost-accounting" },
     { name = "meridian-db", editable = "packages/db" },
     { name = "meridian-evaluator", editable = "services/evaluator" },
     { name = "meridian-guardrails", editable = "packages/guardrails" },
     { name = "meridian-model-gateway", editable = "services/model-gateway" },
+    { name = "meridian-ops", editable = "packages/ops" },
     { name = "meridian-orchestrator", editable = "services/orchestrator" },
     { name = "meridian-output-validator", editable = "packages/output-validator" },
     { name = "meridian-prompt-assembler", editable = "packages/prompt-assembler" },
     { name = "meridian-prompt-registry", editable = "services/prompt-registry" },
     { name = "meridian-retrieval-client", editable = "services/retrieval-client" },
+    { name = "meridian-session-store", editable = "packages/session-store" },
     { name = "meridian-telemetry", editable = "packages/telemetry" },
     { name = "meridian-tool-executor", editable = "services/tool-executor" },
 ]
@@ -716,6 +725,21 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "email-validator", specifier = ">=2.2.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+]
+
+[[package]]
+name = "meridian-cost-accounting"
+version = "0.1.0"
+source = { editable = "packages/cost-accounting" }
+dependencies = [
+    { name = "meridian-contracts" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "meridian-contracts", editable = "packages/contracts" },
     { name = "pydantic", specifier = ">=2.10.0" },
 ]
 
@@ -764,12 +788,14 @@ name = "meridian-guardrails"
 version = "0.1.0"
 source = { editable = "packages/guardrails" }
 dependencies = [
+    { name = "httpx" },
     { name = "meridian-contracts" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "meridian-contracts", editable = "packages/contracts" },
     { name = "pydantic", specifier = ">=2.10.0" },
 ]
@@ -790,11 +816,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "meridian-ops"
+version = "0.1.0"
+source = { editable = "packages/ops" }
+dependencies = [
+    { name = "meridian-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "meridian-contracts", editable = "packages/contracts" }]
+
+[[package]]
 name = "meridian-orchestrator"
 version = "0.1.0"
 source = { editable = "services/orchestrator" }
 dependencies = [
     { name = "meridian-contracts" },
+    { name = "meridian-cost-accounting" },
     { name = "meridian-guardrails" },
     { name = "meridian-model-gateway" },
     { name = "meridian-output-validator" },
@@ -808,6 +846,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "meridian-contracts", editable = "packages/contracts" },
+    { name = "meridian-cost-accounting", editable = "packages/cost-accounting" },
     { name = "meridian-guardrails", editable = "packages/guardrails" },
     { name = "meridian-model-gateway", editable = "services/model-gateway" },
     { name = "meridian-output-validator", editable = "packages/output-validator" },
@@ -886,6 +925,21 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "meridian-contracts", editable = "packages/contracts" },
     { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "meridian-session-store"
+version = "0.1.0"
+source = { editable = "packages/session-store" }
+dependencies = [
+    { name = "meridian-contracts" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "meridian-contracts", editable = "packages/contracts" },
+    { name = "redis", specifier = ">=5.0" },
 ]
 
 [[package]]
@@ -1473,6 +1527,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
+]
+
+[[package]]
+name = "redis"
+version = "7.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/7f/3759b1d0d72b7c92f0d70ffd9dc962b7b7b5ee74e135f9d7d8ab06b8a318/redis-7.4.0.tar.gz", hash = "sha256:64a6ea7bf567ad43c964d2c30d82853f8df927c5c9017766c55a1d1ed95d18ad", size = 4943913, upload-time = "2026-03-24T09:14:37.53Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/3a/95deec7db1eb53979973ebd156f3369a72732208d1391cd2e5d127062a32/redis-7.4.0-py3-none-any.whl", hash = "sha256:a9c74a5c893a5ef8455a5adb793a31bb70feb821c86eccb62eebef5a19c429ec", size = 409772, upload-time = "2026-03-24T09:14:35.968Z" },
 ]
 
 [[package]]

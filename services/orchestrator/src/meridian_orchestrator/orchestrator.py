@@ -44,11 +44,13 @@ from meridian_contracts import (
     ToolValidation,
     UserRequest,
 )
+from meridian_cost_accounting import CostAccountant, PerUserDailyTracker
 from meridian_guardrails import GuardrailPipeline, PipelineResult
 from meridian_model_gateway import CircuitOpenError, ModelClient, ModelDispatchError
 from meridian_output_validator import OutputValidator, ValidationResult
 from meridian_prompt_assembler import Assembler, AssemblyContext
 from meridian_retrieval_client import RetrievalClient
+from meridian_telemetry import Tracer
 from meridian_tool_executor import (
     InvalidParametersError,
     NeedsConfirmationError,
@@ -74,6 +76,7 @@ class OrchestratorReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: str
+    trace_id: str | None = None
     status: OrchestratorStatus
     model_response: ModelResponse | None = None
     orchestration_state: OrchestrationState
@@ -84,6 +87,7 @@ class OrchestratorReply(BaseModel):
     clarification_question: str | None = None
     input_guardrail_result: PipelineResult | None = None
     output_guardrail_result: PipelineResult | None = None
+    cost_usd: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +179,9 @@ class Orchestrator:
     tool_executor: ToolExecutor | None = None  # None disables tool flow
     input_guardrails: GuardrailPipeline | None = None
     output_guardrails: GuardrailPipeline | None = None
+    tracer: Tracer = field(default_factory=Tracer)
+    cost_accountant: CostAccountant | None = None
+    user_spend_tracker: PerUserDailyTracker | None = None
     validator: OutputValidator = field(default_factory=OutputValidator)
     assembler: Assembler = field(default_factory=Assembler)
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
@@ -341,6 +348,7 @@ class Orchestrator:
             state.current_state = OrchestratorPhase.COMPLETED
             timings.total = self._stage_ms(started)
             status = OrchestratorStatus.OK if validation.valid else OrchestratorStatus.FAILED
+            cost_usd = self._account_cost(model_response, request.user_id)
             return OrchestratorReply(
                 request_id=request.request_id,
                 status=status,
@@ -349,6 +357,7 @@ class Orchestrator:
                 validation=validation,
                 input_guardrail_result=input_guardrail_result,
                 output_guardrail_result=output_guardrail_result,
+                cost_usd=cost_usd,
                 error_message=(
                     None if validation.valid else "output validation failed after corrective retry"
                 )
@@ -483,6 +492,16 @@ class Orchestrator:
     def _stage_ms(self, started: float, *, previous: int | None = None) -> int:
         elapsed_ms = int((self.clock() - started) * 1000)
         return elapsed_ms - (previous or 0)
+
+    def _account_cost(self, response: ModelResponse, user_id: str) -> float | None:
+        """If cost accounting is configured, compute per-request cost and update
+        the per-user daily tracker. Returns USD as a float or None if disabled."""
+        if self.cost_accountant is None:
+            return None
+        breakdown = self.cost_accountant.cost_of(response)
+        if self.user_spend_tracker is not None:
+            self.user_spend_tracker.record(user_id, breakdown.total_usd)
+        return float(breakdown.total_usd)
 
     def _refuse(
         self, state: OrchestrationState, classification: ClassificationResult

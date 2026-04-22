@@ -1,0 +1,22 @@
+name: Eval Quality Trends
+audience: [ai_engineer, tech_lead]
+panels:
+  - name: Online faithfulness (daily avg)
+    type: timeseries
+    query: avg_over_time(eval_results.scores.faithfulness[1d])
+    unit: score
+    threshold: {warn: 0.85, crit: 0.80}
+  - name: Online relevance (daily avg)
+    type: timeseries
+    query: avg_over_time(eval_results.scores.relevance[1d])
+    unit: score
+    threshold: {warn: 0.80, crit: 0.70}
+  - name: Regression pass rate (nightly)
+    type: timeseries
+    query: regression.pass_rate
+    unit: "%"
+    threshold: {warn: 0.90, crit: 0.85}
+  - name: Routing accuracy by intent
+    type: table
+    query: accuracy(meridian.intent) by (meridian.intent)
+    unit: "%"

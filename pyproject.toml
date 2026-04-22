@@ -11,7 +11,10 @@ dependencies = [
     "meridian-contracts",
     "meridian-telemetry",
     "meridian-guardrails",
+    "meridian-cost-accounting",
     "meridian-db",
+    "meridian-ops",
+    "meridian-session-store",
     "meridian-output-validator",
     "meridian-prompt-assembler",
     "meridian-orchestrator",
@@ -53,7 +56,10 @@ members = [
 meridian-contracts         = { workspace = true }
 meridian-telemetry         = { workspace = true }
 meridian-guardrails        = { workspace = true }
+meridian-cost-accounting   = { workspace = true }
 meridian-db                = { workspace = true }
+meridian-ops               = { workspace = true }
+meridian-session-store     = { workspace = true }
 meridian-output-validator  = { workspace = true }
 meridian-prompt-assembler  = { workspace = true }
 meridian-orchestrator      = { workspace = true }
