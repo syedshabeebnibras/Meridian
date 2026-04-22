@@ -8,6 +8,7 @@ Phase 5 wires real guardrails.
 
 __version__ = "0.1.0"
 
+from meridian_orchestrator.api import AppConfig, build_app
 from meridian_orchestrator.orchestrator import (
     Orchestrator,
     OrchestratorConfig,
@@ -18,10 +19,12 @@ from meridian_orchestrator.orchestrator import (
 from meridian_orchestrator.routing import route_tier
 
 __all__ = [
+    "AppConfig",
     "Orchestrator",
     "OrchestratorConfig",
     "OrchestratorReply",
     "OrchestratorStatus",
     "TemplateProvider",
+    "build_app",
     "route_tier",
 ]

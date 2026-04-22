@@ -471,3 +471,73 @@ Full observability stack, alerting, cost controls, operational readiness.
 
 ---
 
+
+## Phase 7 — Staging and Shadow Launch — status: done
+Date: 2026-04-21
+
+### Goals (from Section 12)
+Deploy to staging, run shadow traffic, validate end-to-end quality and operations.
+
+### Exit criteria (from Section 12)
+- All launch gates pass on staging
+- Load test sustains 50 req/min
+- Zero P1 security findings
+
+### Honest framing
+Phase 7 is fundamentally team-owned execution — a real staging environment needs real API keys, live RAG, live Jira/Slack, and a real Grafana/PagerDuty deployment. What I can ship is the **infrastructure** to execute Phase 7 when the team is ready.
+
+### Plan
+- [x] **1. Staging deployment config** — `docker-compose.staging.yml`, `fly.toml`, orchestrator `Dockerfile`, `scripts/deploy_staging.sh`
+- [x] **2. Orchestrator HTTP API** — FastAPI app with POST /v1/chat, GET /healthz, GET /readyz, GET /metrics; 5 API tests
+- [x] **3. Shadow replay + load test** — `scripts/shadow_replay.py` + `scripts/load_test.py` with p95 < 4s gate enforcement
+- [x] **4. Red-team security suite** — `scripts/red_team.py` with 8 attack cases covering Section 9 failure modes 3/5/6/7
+- [x] **5. Smoke + docs + exit check** — `scripts/staging_smoke.py`, `STAGING.md`, `SECURITY-REVIEW.md`, `ops/security-review-report.md` template
+
+### Review
+See the "Phase 7 review" section below.
+
+---
+
+## Phase 7 review (2026-04-21)
+
+**Exit criteria (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| All launch gates pass on staging | ⚠️ harness-ready | `scripts/check_launch_gates.py` + `scripts/staging_smoke.py` ready to run against staging. Live runs are team-owned once staging is deployed |
+| Load test sustains 50 req/min | ⚠️ script-ready | `scripts/load_test.py --rps 0.83 --duration 60` exits non-zero if the gate fails; user runs it against their live staging |
+| Zero P1 security findings | ⚠️ script-ready | `scripts/red_team.py` with 8 attack cases covering Section 9 failure modes 3/5/6/7; exits non-zero on any P1 success |
+
+**What shipped (182 tests, all green):**
+- **FastAPI app** — `POST /v1/chat`, `GET /healthz`, `GET /readyz`, `GET /metrics` with custom readiness probe; 5 API tests via httpx.ASGITransport
+- **Dockerfile** — 2-stage build (uv sync + slim runtime), non-root user, HEALTHCHECK
+- **`services/orchestrator/src/meridian_orchestrator/app.py`** — module-level ASGI app with env-driven Orchestrator construction, fall-back to file-based prompts if no DATABASE_URL, mock retrieval if no RAG_BASE_URL
+- **`fly.toml`** — Fly.io deploy config with health checks, autoscale config matching Section 12 Phase 7 load target
+- **`docker-compose.staging.yml`** — staging overlay with resource limits, staging env injection
+- **`scripts/deploy_staging.sh`** — wrapper supporting `fly` + `--compose` paths, optional `--dry-run`
+- **`scripts/shadow_replay.py`** — JSONL-driven async replay with p50/p95/p99 report
+- **`scripts/load_test.py`** — async load harness with RPS + duration + success/latency gates
+- **`scripts/red_team.py`** — 8 attack cases (3 injection, 2 PII, 2 tool misuse, 1 OOS); P1 pass/fail summary
+- **`scripts/staging_smoke.py`** — 60-second post-deploy sanity check
+- **`STAGING.md`** — deployment guide + rollback + secrets map
+- **`SECURITY-REVIEW.md`** — process doc
+- **`ops/security-review-report.md`** — report template
+
+**Beyond the plan:**
+- Chose Fly.io as the free-tier cloud target (user asked for free-tier back in Phase 1). `fly.toml`'s concurrency config maps directly to the 50 req/min gate so the deploy encodes the requirement.
+- `app.py` degrades gracefully: missing `DATABASE_URL` falls back to file-based prompts, missing `RAG_BASE_URL` falls back to MockRetrievalClient. Lets the team bring staging up incrementally as each external dep is provisioned.
+- `scripts/red_team.py` builds an attack catalogue that feeds directly into `datasets/adversarial_v1.yaml` for regression (the monthly red-team process should backfill findings as test cases).
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Team-owned handoff to real Phase 7 sign-off:**
+1. Provision staging Postgres (Supabase / Neon) + set `DATABASE_URL`
+2. Deploy a shared LiteLLM proxy or fly secrets the Anthropic/OpenAI keys for in-process use
+3. Deploy Langfuse v3 + set keys
+4. Get RAG_BASE_URL from Data Platform + provision Jira/Slack creds from IT/DevOps
+5. `fly launch --copy-config` → `fly secrets set ...` → `scripts/deploy_staging.sh`
+6. Run all 5 verification scripts (smoke, shadow, load, red-team, launch-gates)
+7. Anonymize 500+ production queries into a JSONL for shadow replay (AI/Prompt Engineer)
+8. Security team reviews the red-team report → sign off on launch
+
+---

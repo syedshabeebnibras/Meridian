@@ -1,0 +1,77 @@
+# Staging overlay — use WITH docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# Differences from dev:
+#   - named volumes with explicit paths for host-mount backups
+#   - resource limits (Section 11 capacity planning)
+#   - no hot-reload / dev tools
+#   - real env vars (populated from a .env.staging file)
+#   - orchestrator container running the production Dockerfile
+
+services:
+  postgres:
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+
+  litellm:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    container_name: meridian-orchestrator
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      MERIDIAN_ENV: staging
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      OTEL_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      # Real service creds — set in .env.staging
+      RAG_BASE_URL: ${RAG_BASE_URL:-}
+      RAG_API_KEY: ${RAG_API_KEY:-}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      LLAMA_GUARD_BASE_URL: ${LLAMA_GUARD_BASE_URL:-}
+      PATRONUS_API_KEY: ${PATRONUS_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"

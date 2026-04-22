@@ -1,0 +1,58 @@
+# Fly.io deployment config for the Meridian orchestrator.
+# Run once:   fly launch --no-deploy --copy-config --name meridian-orch
+# Deploy:     scripts/deploy_staging.sh   (or `fly deploy`)
+
+app = "meridian-orch"
+primary_region = "iad"
+kill_signal = "SIGINT"
+kill_timeout = "45s"  # matches Section 7 total-request timeout
+
+[build]
+  dockerfile = "services/orchestrator/Dockerfile"
+
+[env]
+  MERIDIAN_ENV = "staging"
+  LOG_LEVEL = "INFO"
+  OTEL_ENABLED = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 50    # Section 12 Phase 7 exit criterion: 50 req/min sustained
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/healthz"
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "3s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/readyz"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Secrets are set via `fly secrets set` and injected as env vars:
+#   ANTHROPIC_API_KEY
+#   OPENAI_API_KEY
+#   LITELLM_MASTER_KEY
+#   LITELLM_BASE_URL           (point at a shared LiteLLM proxy)
+#   DATABASE_URL               (Supabase / Neon Postgres)
+#   RAG_BASE_URL               (Data Platform's staging endpoint)
+#   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST
+#   JIRA_EMAIL / JIRA_API_TOKEN
+#   SLACK_BOT_TOKEN
