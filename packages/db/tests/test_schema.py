@@ -35,11 +35,12 @@ def test_alembic_script_graph_loads() -> None:
     cfg.set_main_option("script_location", str(REPO_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     heads = list(script.get_heads())
-    assert heads == ["0002"], f"expected single head '0002', got {heads}"
-    # And 0002 must reference 0001 so the chain is continuous.
-    rev = script.get_revision("0002")
-    assert rev is not None
-    assert rev.down_revision == "0001"
+    assert heads == ["0003"], f"expected single head '0003', got {heads}"
+    # The migration chain must be continuous all the way back.
+    rev_0003 = script.get_revision("0003")
+    rev_0002 = script.get_revision("0002")
+    assert rev_0003 is not None and rev_0003.down_revision == "0002"
+    assert rev_0002 is not None and rev_0002.down_revision == "0001"
 
 
 def test_audit_log_indexes() -> None:

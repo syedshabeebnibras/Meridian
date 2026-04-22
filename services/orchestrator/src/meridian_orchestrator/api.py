@@ -1,14 +1,14 @@
 """FastAPI HTTP surface for the orchestrator.
 
-Exposes the minimum endpoints needed to deploy Meridian to staging:
+Endpoints:
+  POST /v1/chat     — run a UserRequest through the state machine, gated
+                      by the feature-flag rollout if one is wired in
+  POST /v1/feedback — record thumbs up/down + free-text for a past request
+  GET  /healthz     — liveness
+  GET  /readyz      — readiness (checks template provider + retrieval)
+  GET  /metrics     — prometheus text format (stub)
 
-  POST /v1/chat   — run a UserRequest through the full state machine
-  GET  /healthz   — liveness (always 200 if the process is up)
-  GET  /readyz    — readiness (checks template provider + retrieval reachable)
-  GET  /metrics   — prometheus text format (stub; Phase 7 team wires real registry)
-
-Orchestrator construction is env-driven via build_orchestrator(). Tests can
-pass a pre-built instance.
+Orchestrator + optional rollout + feedback store are injected at build time.
 """
 
 from __future__ import annotations
@@ -16,10 +16,14 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from meridian_contracts import UserRequest
+from meridian_feature_flags import RolloutService
+from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
 
@@ -28,6 +32,43 @@ from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
 class AppConfig:
     environment: str = "staging"
     version: str = "0.1.0"
+    flag_name: str = "meridian.enabled"
+
+
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    user_id: str
+    verdict: Literal["up", "down"]
+    comment: str = Field(default="", max_length=2000)
+
+
+class FeedbackAck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recorded_at: datetime
+    request_id: str
+
+
+class FeedbackStore(Protocol):
+    """Anything that can persist a feedback record. Phase 8 ships an
+    InMemoryFeedbackStore; Phase 9 adds a Postgres-backed one."""
+
+    def record(self, feedback: FeedbackRequest) -> None: ...
+
+
+@dataclass
+class InMemoryFeedbackStore:
+    entries: list[FeedbackRequest] | None = None
+
+    def __post_init__(self) -> None:
+        if self.entries is None:
+            self.entries = []
+
+    def record(self, feedback: FeedbackRequest) -> None:
+        assert self.entries is not None
+        self.entries.append(feedback)
 
 
 def build_app(
@@ -35,11 +76,15 @@ def build_app(
     *,
     config: AppConfig | None = None,
     readiness_check: Callable[[], bool] | None = None,
+    rollout: RolloutService | None = None,
+    feedback_store: FeedbackStore | None = None,
 ) -> FastAPI:
-    """Build the FastAPI app wrapping a pre-configured Orchestrator.
+    """Build the FastAPI app.
 
-    `readiness_check` can run any custom probe — e.g. pinging the RAG
-    endpoint. Defaults to always-true once the orchestrator is built.
+    `rollout`: optional; if provided, /v1/chat returns 403 for users not in
+    the rollout. When None, every request is allowed (useful for tests).
+
+    `feedback_store`: optional; if None, /v1/feedback returns 501.
     """
     config = config or AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging"))
 
@@ -62,9 +107,6 @@ def build_app(
 
     @app.get("/metrics", response_class=PlainTextResponse)
     def metrics() -> str:
-        # Phase 7 team wires a real prometheus-client registry. This stub
-        # returns the metric names we expect to emit so alerts can reference
-        # them before the real counters land.
         return (
             "# HELP meridian_requests_total Total orchestrator requests\n"
             "# TYPE meridian_requests_total counter\n"
@@ -76,6 +118,23 @@ def build_app(
 
     @app.post("/v1/chat", response_model=None)
     def chat(request: UserRequest) -> OrchestratorReply:
+        if rollout is not None:
+            decision = rollout.evaluate(config.flag_name, request.user_id)
+            if not decision.allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Meridian is not enabled for your account yet. "
+                        f"(rollout: {decision.result.value})"
+                    ),
+                )
         return orchestrator.handle(request)
+
+    @app.post("/v1/feedback", response_model=None)
+    def feedback(request: FeedbackRequest) -> FeedbackAck:
+        if feedback_store is None:
+            raise HTTPException(status_code=501, detail="feedback collection not configured")
+        feedback_store.record(request)
+        return FeedbackAck(recorded_at=datetime.now(tz=UTC), request_id=request.request_id)
 
     return app

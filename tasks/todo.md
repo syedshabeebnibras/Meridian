@@ -541,3 +541,63 @@ See the "Phase 7 review" section below.
 8. Security team reviews the red-team report → sign off on launch
 
 ---
+
+## Phase 8 — Production Launch — status: done
+Date: 2026-04-21
+
+### Goals (from Section 12)
+Controlled production rollout with monitoring.
+
+### Exit criteria (from Section 12)
+- 100% rollout stable for 48 hours
+- Zero P1 incidents
+- User feedback collected
+
+### Honest framing
+Phase 8 is almost entirely team-executed — the actual dogfooding, beta window, and gradual rollout all require real users on a live system. What I can ship is the **rollout infrastructure** (feature flags, rollout CLI, go/no-go check, feedback collection, launch comms templates).
+
+### Plan
+- [x] **1. Feature flag system** — `packages/feature-flags` + migration `0003_feature_flags`; percentage rollout via stable hash; orchestrator integration; 10 tests
+- [x] **2. Rollout CLI + go/no-go checklist** — `scripts/rollout.py` + `scripts/go_no_go.py`
+- [x] **3. Feedback collection + stability monitor** — `POST /v1/feedback` + `scripts/stability_monitor.py`
+- [x] **4. Launch comms + docs + exit check** — `comms/*.md` + `LAUNCH.md` + review below
+
+---
+
+## Phase 8 review (2026-04-21)
+
+**Exit criteria (Section 12):**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| 100% rollout stable for 48 hours | ⚠️ script-ready | `scripts/stability_monitor.py --mode watch --hours 48` polls /healthz + /metrics and exits non-zero on any P1 signal. Real 48-hour watch is team-owned once prod traffic is live |
+| Zero P1 incidents | ⚠️ script-ready | Tracked by stability_monitor. Section 11 alerts are already defined in `ops/alerts/alerts.yaml` |
+| User feedback collected | ⚠️ endpoint-ready | `POST /v1/feedback` endpoint + `InMemoryFeedbackStore`; Postgres-backed store is a future small lift. `comms/feedback-form.md` is the questionnaire template |
+
+**What shipped (192 tests total, all green):**
+- **`packages/feature-flags`** — `RolloutService` with stable-hash bucketing + allowlist/denylist/kill-switch; Postgres + in-memory stores; 10 tests
+- **Migration 0003** — `feature_flags` table with CHECK constraint on percentage; seed row for `meridian.enabled`
+- **API integration** — `/v1/chat` now takes an optional `RolloutService` and returns 403 when a user is out of rollout; `/v1/feedback` endpoint + `FeedbackStore` Protocol + `InMemoryFeedbackStore`
+- **`scripts/rollout.py`** — CLI with `status` / `set --percentage` / `allow` / `deny` / `kill` subcommands; writes to Postgres via `PostgresFeatureFlagStore`
+- **`scripts/go_no_go.py`** — runs launch-gate + smoke + red-team + quick stability; single PASS/FAIL
+- **`scripts/stability_monitor.py`** — quick + watch modes; polls healthz/metrics; reports P1 incidents with timestamps
+- **`comms/launch-announcement.md`** — 100% launch email/Slack template
+- **`comms/usage-guide.md`** — end-user reference, what-it-does-and-doesn't, privacy notes
+- **`comms/feedback-form.md`** — beta questionnaire
+- **`LAUNCH.md`** — full rollout plan with day-by-day commands, comms schedule, emergency rollback
+
+**Beyond the plan:**
+- Included `flag_name` in the bucket hash so a user in the 40th percentile for `meridian.enabled` won't correlate with the 40th for a future `meridian.tool_invocation` rollout — decouples independent rollouts.
+- `go_no_go.py` is idempotent and composable — team can run it standalone before every percentage bump, or wire it into a "promote to prod" CI job.
+
+**Lessons captured:** none during execution (no user corrections).
+
+**Team-owned handoff before real Phase 8 sign-off:**
+1. Apply migration 0003 in staging + prod (`make migrate`)
+2. Populate `ops/beta_users.txt` with the 50 beta testers
+3. Run the `LAUNCH.md` day-by-day sequence with the AI/Prompt + Platform on-call pairs
+4. Aggregate feedback at end of beta; decide whether to proceed
+5. Execute the 25% → 50% → 100% promotion with `scripts/go_no_go.py` before each
+6. Final 48-hour `stability_monitor.py --mode watch` confirms the exit criterion
+
+---

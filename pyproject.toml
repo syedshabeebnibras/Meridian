@@ -13,6 +13,7 @@ dependencies = [
     "meridian-guardrails",
     "meridian-cost-accounting",
     "meridian-db",
+    "meridian-feature-flags",
     "meridian-ops",
     "meridian-session-store",
     "meridian-output-validator",
@@ -58,6 +59,7 @@ meridian-telemetry         = { workspace = true }
 meridian-guardrails        = { workspace = true }
 meridian-cost-accounting   = { workspace = true }
 meridian-db                = { workspace = true }
+meridian-feature-flags     = { workspace = true }
 meridian-ops               = { workspace = true }
 meridian-session-store     = { workspace = true }
 meridian-output-validator  = { workspace = true }

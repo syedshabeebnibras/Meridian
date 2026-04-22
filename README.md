@@ -2,7 +2,7 @@
 
 Enterprise knowledge assistant. Grounded Q&A, structured extraction, and tool-driven workflows over internal documentation — see [`meridian-execution-plan.md`](./meridian-execution-plan.md) for the full production plan.
 
-**Status:** Phase 7 complete — FastAPI orchestrator with `/v1/chat` + `/healthz` + `/readyz` + `/metrics`, production Dockerfile, Fly.io + docker-compose staging configs, shadow replay + load test + red-team scripts, staging smoke test. 182 tests pass. Live staging deployment, shadow-replay against 500+ anonymized queries, and red-team review are team-owned deliverables.
+**Status:** Phase 8 complete — feature-flag rollout system with percentage bucketing + allowlist + kill switch, `/v1/feedback` endpoint, rollout CLI, go/no-go checklist, 48-hour stability monitor, launch-announcement + usage-guide + feedback-form templates, and `LAUNCH.md` with a day-by-day rollout plan. 192 tests pass. Live dogfood → beta → 25% → 50% → 100% execution is team-owned.
 
 ---
 
@@ -32,7 +32,7 @@ meridian/
 └── Makefile                   Everyday commands
 ```
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for the prompt-authoring flow, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle and resilience stack, [`TOOLS.md`](./TOOLS.md) for the tool-execution framework, [`GUARDRAILS.md`](./GUARDRAILS.md) for the safety pipeline, [`EVALS.md`](./EVALS.md) for the eval framework + launch gates, [`OPERATIONS.md`](./OPERATIONS.md) for telemetry + dashboards + alerts + runbooks, [`STAGING.md`](./STAGING.md) for deploy + verify, and [`SECURITY-REVIEW.md`](./SECURITY-REVIEW.md) for the red-team process.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for the prompt-authoring flow, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle and resilience stack, [`TOOLS.md`](./TOOLS.md) for the tool-execution framework, [`GUARDRAILS.md`](./GUARDRAILS.md) for the safety pipeline, [`EVALS.md`](./EVALS.md) for the eval framework + launch gates, [`OPERATIONS.md`](./OPERATIONS.md) for telemetry + dashboards + alerts + runbooks, [`STAGING.md`](./STAGING.md) for deploy + verify, [`SECURITY-REVIEW.md`](./SECURITY-REVIEW.md) for the red-team process, and [`LAUNCH.md`](./LAUNCH.md) for the Phase 8 rollout plan.
 
 ---
 

@@ -14,6 +14,7 @@ members = [
     "meridian-cost-accounting",
     "meridian-db",
     "meridian-evaluator",
+    "meridian-feature-flags",
     "meridian-guardrails",
     "meridian-model-gateway",
     "meridian-ops",
@@ -705,6 +706,7 @@ dependencies = [
     { name = "meridian-cost-accounting" },
     { name = "meridian-db" },
     { name = "meridian-evaluator" },
+    { name = "meridian-feature-flags" },
     { name = "meridian-guardrails" },
     { name = "meridian-model-gateway" },
     { name = "meridian-ops" },
@@ -745,6 +747,7 @@ requires-dist = [
     { name = "meridian-cost-accounting", editable = "packages/cost-accounting" },
     { name = "meridian-db", editable = "packages/db" },
     { name = "meridian-evaluator", editable = "services/evaluator" },
+    { name = "meridian-feature-flags", editable = "packages/feature-flags" },
     { name = "meridian-guardrails", editable = "packages/guardrails" },
     { name = "meridian-model-gateway", editable = "services/model-gateway" },
     { name = "meridian-ops", editable = "packages/ops" },
@@ -850,6 +853,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "meridian-feature-flags"
+version = "0.1.0"
+source = { editable = "packages/feature-flags" }
+dependencies = [
+    { name = "meridian-contracts" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "meridian-contracts", editable = "packages/contracts" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.36" },
+]
+
+[[package]]
 name = "meridian-guardrails"
 version = "0.1.0"
 source = { editable = "packages/guardrails" }
@@ -900,6 +920,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "meridian-contracts" },
     { name = "meridian-cost-accounting" },
+    { name = "meridian-feature-flags" },
     { name = "meridian-guardrails" },
     { name = "meridian-model-gateway" },
     { name = "meridian-output-validator" },
@@ -916,6 +937,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "meridian-contracts", editable = "packages/contracts" },
     { name = "meridian-cost-accounting", editable = "packages/cost-accounting" },
+    { name = "meridian-feature-flags", editable = "packages/feature-flags" },
     { name = "meridian-guardrails", editable = "packages/guardrails" },
     { name = "meridian-model-gateway", editable = "services/model-gateway" },
     { name = "meridian-output-validator", editable = "packages/output-validator" },
