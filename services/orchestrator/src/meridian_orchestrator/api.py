@@ -14,18 +14,20 @@ Orchestrator + optional rollout + feedback store are injected at build time.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from meridian_contracts import UserRequest
 from meridian_feature_flags import RolloutService
 from meridian_ops import RateLimitExceededError, TokenBucketRateLimiter
 from pydantic import BaseModel, ConfigDict, Field
 
+from meridian_orchestrator import metrics
 from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
 
 
@@ -110,15 +112,12 @@ def build_app(
             raise HTTPException(status_code=503, detail="not ready")
         return "ready"
 
-    @app.get("/metrics", response_class=PlainTextResponse)
-    def metrics() -> str:
-        return (
-            "# HELP meridian_requests_total Total orchestrator requests\n"
-            "# TYPE meridian_requests_total counter\n"
-            "meridian_requests_total 0\n"
-            "# HELP meridian_cost_usd_total Total USD cost accounted\n"
-            "# TYPE meridian_cost_usd_total counter\n"
-            "meridian_cost_usd_total 0\n"
+    @app.get("/metrics")
+    def metrics_endpoint() -> Response:
+        # Prometheus expects its own content-type; PlainTextResponse would lie.
+        return Response(
+            content=metrics.render(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
     @app.post("/v1/chat", response_model=None)
@@ -127,6 +126,7 @@ def build_app(
             try:
                 rate_limiter.allow(request.user_id)
             except RateLimitExceededError as exc:
+                metrics.RATE_LIMITED_TOTAL.inc()
                 # Retry-After of 1s — matches the default refill rate. Clients
                 # doing exponential backoff will quickly find the sustained rate.
                 raise HTTPException(
@@ -144,7 +144,13 @@ def build_app(
                         f"(rollout: {decision.result.value})"
                     ),
                 )
-        return orchestrator.handle(request)
+        started = time.perf_counter()
+        reply = orchestrator.handle(request)
+        metrics.REQUEST_DURATION_SECONDS.observe(time.perf_counter() - started)
+        metrics.REQUESTS_TOTAL.labels(status=reply.status.value).inc()
+        if reply.cost_usd is not None:
+            metrics.COST_USD_TOTAL.inc(reply.cost_usd)
+        return reply
 
     @app.post("/v1/feedback", response_model=None)
     def feedback(request: FeedbackRequest) -> FeedbackAck:

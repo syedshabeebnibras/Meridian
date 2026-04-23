@@ -143,6 +143,45 @@ async def test_metrics_returns_prometheus_format(client: httpx.AsyncClient) -> N
     assert response.status_code == 200
     assert "meridian_requests_total" in response.text
     assert "# HELP" in response.text
+    # Real Prometheus text format — content-type must advertise the 0.0.4 spec.
+    assert "text/plain" in response.headers.get("content-type", "")
+
+
+async def test_metrics_increments_on_chat_calls(client: httpx.AsyncClient) -> None:
+    """A /v1/chat call bumps request counter + latency histogram.
+
+    We assert the bump rather than absolute values because other tests in
+    this module share the metrics registry (module-level singleton)."""
+    before = await client.get("/metrics")
+    before_total = _parse_metric(before.text, 'meridian_requests_total{status="ok"}')
+
+    payload = {
+        "request_id": "req_metrics01",
+        "user_id": "u_metrics",
+        "session_id": "s",
+        "query": "What's the P1 escalation procedure?",
+        "conversation_history": [],
+        "metadata": {},
+    }
+    resp = await client.post("/v1/chat", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+    after = await client.get("/metrics")
+    after_total = _parse_metric(after.text, 'meridian_requests_total{status="ok"}')
+    assert after_total == before_total + 1
+    # Histogram populated — at least one bucket crossed.
+    assert "meridian_request_duration_seconds_count" in after.text
+
+
+def _parse_metric(text: str, name: str) -> float:
+    """Pull the value of one metric line out of Prometheus text format."""
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        if line.startswith(name):
+            return float(line.rsplit(" ", 1)[1])
+    return 0.0
 
 
 async def test_chat_returns_429_when_rate_limit_exceeded() -> None:
