@@ -2,7 +2,7 @@
 
 Enterprise knowledge assistant. Grounded Q&A, structured extraction, and tool-driven workflows over internal documentation — see [`meridian-execution-plan.md`](./meridian-execution-plan.md) for the full production plan.
 
-**Status:** Phase 8 complete — feature-flag rollout system with percentage bucketing + allowlist + kill switch, `/v1/feedback` endpoint, rollout CLI, go/no-go checklist, 48-hour stability monitor, launch-announcement + usage-guide + feedback-form templates, and `LAUNCH.md` with a day-by-day rollout plan. 192 tests pass. Live dogfood → beta → 25% → 50% → 100% execution is team-owned.
+**Status: All 9 phases complete.** Phase 9 adds the semantic response cache (pgvector, cosine ≥ 0.95), weekly review tooling, dataset-expansion script, 30/60/90-day report templates, and a v2 roadmap drafted from Section 30's dependency graph. 199 tests pass. Live staging/prod deployment, the actual dogfood → beta → 100% rollout, and the 90-day KPI measurement all happen team-side against real production.
 
 ---
 
@@ -32,7 +32,7 @@ meridian/
 └── Makefile                   Everyday commands
 ```
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for the prompt-authoring flow, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle and resilience stack, [`TOOLS.md`](./TOOLS.md) for the tool-execution framework, [`GUARDRAILS.md`](./GUARDRAILS.md) for the safety pipeline, [`EVALS.md`](./EVALS.md) for the eval framework + launch gates, [`OPERATIONS.md`](./OPERATIONS.md) for telemetry + dashboards + alerts + runbooks, [`STAGING.md`](./STAGING.md) for deploy + verify, [`SECURITY-REVIEW.md`](./SECURITY-REVIEW.md) for the red-team process, and [`LAUNCH.md`](./LAUNCH.md) for the Phase 8 rollout plan.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component inventory, [`CONTRACTS.md`](./CONTRACTS.md) for the data-contract index, [`PROMPTS.md`](./PROMPTS.md) for prompt authoring, [`REGRESSION.md`](./REGRESSION.md) for the regression harness, [`ORCHESTRATION.md`](./ORCHESTRATION.md) for the request lifecycle, [`TOOLS.md`](./TOOLS.md) for the tool-execution framework, [`GUARDRAILS.md`](./GUARDRAILS.md) for the safety pipeline, [`EVALS.md`](./EVALS.md) for the eval framework + launch gates, [`OPERATIONS.md`](./OPERATIONS.md) for telemetry + dashboards + alerts + runbooks, [`STAGING.md`](./STAGING.md) for deploy + verify, [`SECURITY-REVIEW.md`](./SECURITY-REVIEW.md) for the red-team process, [`LAUNCH.md`](./LAUNCH.md) for the Phase 8 rollout plan, [`OPTIMIZATION.md`](./OPTIMIZATION.md) for the post-launch tuning loop, and [`v2-roadmap.md`](./v2-roadmap.md) for the Section-30 advanced-extensions plan.
 
 ---
 

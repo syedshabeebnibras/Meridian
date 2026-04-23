@@ -54,6 +54,7 @@ type:  ## Mypy strict typecheck (installed packages + migrations)
 	  -p meridian_session_store \
 	  -p meridian_output_validator \
 	  -p meridian_prompt_assembler \
+	  -p meridian_semantic_cache \
 	  -p meridian_orchestrator \
 	  -p meridian_prompt_registry \
 	  -p meridian_model_gateway \

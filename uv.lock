@@ -23,6 +23,7 @@ members = [
     "meridian-prompt-assembler",
     "meridian-prompt-registry",
     "meridian-retrieval-client",
+    "meridian-semantic-cache",
     "meridian-session-store",
     "meridian-telemetry",
     "meridian-tool-executor",
@@ -715,6 +716,7 @@ dependencies = [
     { name = "meridian-prompt-assembler" },
     { name = "meridian-prompt-registry" },
     { name = "meridian-retrieval-client" },
+    { name = "meridian-semantic-cache" },
     { name = "meridian-session-store" },
     { name = "meridian-telemetry" },
     { name = "meridian-tool-executor" },
@@ -756,6 +758,7 @@ requires-dist = [
     { name = "meridian-prompt-assembler", editable = "packages/prompt-assembler" },
     { name = "meridian-prompt-registry", editable = "services/prompt-registry" },
     { name = "meridian-retrieval-client", editable = "services/retrieval-client" },
+    { name = "meridian-semantic-cache", editable = "packages/semantic-cache" },
     { name = "meridian-session-store", editable = "packages/session-store" },
     { name = "meridian-telemetry", editable = "packages/telemetry" },
     { name = "meridian-tool-executor", editable = "services/tool-executor" },
@@ -1017,6 +1020,25 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "meridian-contracts", editable = "packages/contracts" },
     { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "meridian-semantic-cache"
+version = "0.1.0"
+source = { editable = "packages/semantic-cache" }
+dependencies = [
+    { name = "meridian-contracts" },
+    { name = "pgvector" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "meridian-contracts", editable = "packages/contracts" },
+    { name = "pgvector", specifier = ">=0.3.6" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.36" },
 ]
 
 [[package]]

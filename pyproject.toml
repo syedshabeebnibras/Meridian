@@ -18,6 +18,7 @@ dependencies = [
     "meridian-session-store",
     "meridian-output-validator",
     "meridian-prompt-assembler",
+    "meridian-semantic-cache",
     "meridian-orchestrator",
     "meridian-prompt-registry",
     "meridian-model-gateway",
@@ -64,6 +65,7 @@ meridian-ops               = { workspace = true }
 meridian-session-store     = { workspace = true }
 meridian-output-validator  = { workspace = true }
 meridian-prompt-assembler  = { workspace = true }
+meridian-semantic-cache    = { workspace = true }
 meridian-orchestrator      = { workspace = true }
 meridian-prompt-registry   = { workspace = true }
 meridian-model-gateway     = { workspace = true }

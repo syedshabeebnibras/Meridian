@@ -1,0 +1,18 @@
+[project]
+name = "meridian-semantic-cache"
+version = "0.1.0"
+description = "Semantic response cache — pgvector-backed, cosine >= 0.95 (Section 5 three-layer cache, Section 9 mode 10)."
+requires-python = ">=3.12"
+dependencies = [
+    "meridian-contracts",
+    "pgvector>=0.3.6",
+    "sqlalchemy>=2.0.36",
+    "pydantic>=2.10.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meridian_semantic_cache"]
