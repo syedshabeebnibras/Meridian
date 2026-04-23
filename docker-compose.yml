@@ -158,6 +158,14 @@ services:
       LANGFUSE_INIT_ORG_NAME: Meridian
       LANGFUSE_INIT_PROJECT_ID: meridian-dev
       LANGFUSE_INIT_PROJECT_NAME: Meridian-Dev
+      # Seed API keys on first boot so callers don't need UI clicks.
+      # Only applied when the langfuse Postgres DB is fresh; the project
+      # is idempotent on subsequent starts.
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@meridian.dev}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-changeme-langfuse-admin}
+      LANGFUSE_INIT_USER_NAME: Meridian Admin
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: clickhouse
