@@ -156,8 +156,16 @@ def _valid_qa_content() -> dict[str, Any]:
             "minutes until resolution [DOC-2]."
         ),
         "citations": [
-            {"doc_index": 1, "source_title": "Incident Response Runbook"},
-            {"doc_index": 2, "source_title": "On-Call Procedures 2026"},
+            {
+                "doc_index": 1,
+                "source_title": "Incident Response Runbook",
+                "relevant_excerpt": "Page the on-call SRE immediately...",
+            },
+            {
+                "doc_index": 2,
+                "source_title": "On-Call Procedures 2026",
+                "relevant_excerpt": "Status updates every 15 minutes...",
+            },
         ],
         "confidence": 0.93,
         "needs_escalation": False,

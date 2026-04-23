@@ -82,7 +82,10 @@ class RetryingClient:
                 # Already wrapped by the LiteLLM client — don't double-retry.
                 last_exc = exc
                 break
-        raise ModelDispatchError(f"LiteLLM call failed after {attempt} attempt(s)") from last_exc
+        cause = f"{type(last_exc).__name__}: {last_exc}" if last_exc else "<no inner exception>"
+        raise ModelDispatchError(
+            f"LiteLLM call failed after {attempt} attempt(s): {cause}"
+        ) from last_exc
 
     # ------------------------------------------------------------------
     def _next_delay(self, attempt: int, ladder: tuple[float, ...]) -> float:

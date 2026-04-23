@@ -41,8 +41,11 @@ _TIER_ALIAS = {
     ModelTier.FRONTIER: "meridian-frontier",
 }
 
+# Strict-mode JSON schemas — additionalProperties:false at every object level
+# and every property listed in `required`.
 _SCORE_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "reasoning": {"type": "string"},
@@ -52,6 +55,7 @@ _SCORE_SCHEMA: dict[str, Any] = {
 
 _PAIRWISE_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "winner": {"type": "string", "enum": ["A", "B", "tie"]},
         "reasoning": {"type": "string"},

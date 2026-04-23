@@ -57,6 +57,12 @@ class LiteLLMClient:
         try:
             response = self._http.post("/v1/chat/completions", json=body)
             response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Include the upstream error body so the cause is visible in logs.
+            detail = exc.response.text[:500] if exc.response is not None else ""
+            raise ModelDispatchError(
+                f"LiteLLM call failed: {exc.response.status_code} {detail}"
+            ) from exc
         except httpx.HTTPError as exc:
             raise ModelDispatchError(f"LiteLLM call failed: {exc}") from exc
         elapsed_ms = int((time.perf_counter() - started) * 1000)

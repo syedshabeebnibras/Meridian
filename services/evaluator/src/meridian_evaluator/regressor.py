@@ -225,8 +225,12 @@ def load_and_run(
 # ---------------------------------------------------------------------------
 # JSON schemas for structured output (mirror the template schema_refs)
 # ---------------------------------------------------------------------------
+# Strict-mode JSON schemas — additionalProperties:false at every object level,
+# all properties required. Required by OpenAI strict mode + Anthropic structured
+# output GA. Must stay in sync with orchestrator.py copies of these.
 _CLASSIFIER_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "intent": {"type": "string"},
         "confidence": {"type": "number"},
@@ -237,6 +241,7 @@ _CLASSIFIER_SCHEMA: dict[str, Any] = {
 
 _GROUNDED_QA_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "reasoning": {"type": "string"},
         "answer": {"type": "string"},
@@ -244,12 +249,13 @@ _GROUNDED_QA_SCHEMA: dict[str, Any] = {
             "type": "array",
             "items": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "doc_index": {"type": "integer"},
                     "source_title": {"type": "string"},
                     "relevant_excerpt": {"type": "string"},
                 },
-                "required": ["doc_index", "source_title"],
+                "required": ["doc_index", "source_title", "relevant_excerpt"],
             },
         },
         "confidence": {"type": "number"},
