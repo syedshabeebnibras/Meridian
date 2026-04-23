@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!--
+  Single-node Clickhouse macros for Langfuse v3 compatibility.
+
+  Langfuse's migrations issue `CREATE TABLE ... ON CLUSTER default`
+  and use `ReplicatedMergeTree`, which need cluster identity macros
+  even in single-node deployments.
+-->
+<clickhouse>
+  <macros>
+    <cluster>default</cluster>
+    <shard>01</shard>
+    <replica>replica01</replica>
+  </macros>
+</clickhouse>

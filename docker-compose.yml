@@ -98,6 +98,8 @@ services:
       CLICKHOUSE_PASSWORD: clickhouse
     volumes:
       - clickhouse-data:/var/lib/clickhouse
+      # Single-node Keeper + macros so Langfuse v3 cluster migrations work.
+      - ./infra/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
     ulimits:
       nofile:
         soft: 262144

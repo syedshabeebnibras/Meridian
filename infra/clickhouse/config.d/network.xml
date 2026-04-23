@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<!-- Bind Clickhouse to all network interfaces so other compose services can reach it. -->
+<clickhouse>
+  <listen_host>0.0.0.0</listen_host>
+</clickhouse>
