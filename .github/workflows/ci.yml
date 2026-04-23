@@ -173,3 +173,61 @@ jobs:
           name: init-sql
           path: /tmp/init.sql
           retention-days: 14
+
+  smoke:
+    name: Smoke (healthz/readyz/metrics)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    env:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@localhost:5432/meridian
+      REDIS_URL: redis://localhost:6379/0
+      MERIDIAN_ENV: ci
+      # No real provider keys in CI — we only exercise the HTTP surface
+      # and the early phases that don't need a live model. --allow-degraded
+      # covers the dispatch failure when there's no upstream.
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: meridian
+          POSTGRES_PASSWORD: meridian
+          POSTGRES_DB: meridian
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Apply migrations
+        run: uv run --group migrations alembic upgrade head
+      - name: Activate prompts in CI env
+        run: uv run --group bootstrap python scripts/bootstrap_prompts.py --activate --env ci
+      - name: Start orchestrator
+        run: |
+          uv run uvicorn meridian_orchestrator.app:app --host 127.0.0.1 --port 8000 &
+          echo $! > /tmp/orch.pid
+          until curl -fsS http://127.0.0.1:8000/healthz > /dev/null; do
+            sleep 1
+          done
+      - name: Run smoke
+        env:
+          STAGING_URL: http://127.0.0.1:8000
+        run: uv run python scripts/staging_smoke.py --allow-degraded
+      - name: Stop orchestrator
+        if: always()
+        run: kill "$(cat /tmp/orch.pid)" || true

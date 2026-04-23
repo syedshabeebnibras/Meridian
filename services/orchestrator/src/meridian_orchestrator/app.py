@@ -174,6 +174,14 @@ def _orchestrator() -> Orchestrator:
 
 
 def _readiness_check() -> bool:
+    """Ready when we can reach every hard dependency.
+
+    Previously this only probed the template provider, so a Redis or
+    LiteLLM outage would let /readyz stay green while /v1/chat 500'd.
+    Now we ping each downstream the orchestrator actually needs before
+    serving a request: templates, Redis (when configured), and LiteLLM
+    (when configured).
+    """
     try:
         _orchestrator().templates.get_active(
             "classifier", os.environ.get("MERIDIAN_ENV", "staging")
@@ -182,6 +190,29 @@ def _readiness_check() -> bool:
         return False
     except Exception:
         return False
+
+    redis_url = os.environ.get("REDIS_URL", "")
+    if redis_url:
+        try:
+            import redis
+
+            client = redis.Redis.from_url(redis_url, socket_connect_timeout=1.0)
+            client.ping()
+        except Exception:
+            return False
+
+    litellm_base_url = os.environ.get("LITELLM_BASE_URL", "")
+    if litellm_base_url:
+        import httpx
+
+        try:
+            httpx.get(
+                f"{litellm_base_url.rstrip('/')}/health/liveliness",
+                timeout=2.0,
+            ).raise_for_status()
+        except Exception:
+            return False
+
     return True
 
 

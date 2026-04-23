@@ -86,8 +86,9 @@ def main() -> int:
     deny_cmd.add_argument("--user", required=True)
 
     kill_cmd = sub.add_parser("kill")
-    kill_cmd.add_argument("--on", action="store_true")
-    kill_cmd.add_argument("--off", action="store_true")
+    kill_group = kill_cmd.add_mutually_exclusive_group(required=True)
+    kill_group.add_argument("--on", action="store_true")
+    kill_group.add_argument("--off", action="store_true")
 
     args = parser.parse_args()
 
@@ -136,9 +137,8 @@ def main() -> int:
         return 0
 
     if args.command == "kill":
-        if args.on == args.off:
-            print("pass exactly one of --on / --off", file=sys.stderr)
-            return 1
+        # argparse's mutually_exclusive_group(required=True) guarantees exactly
+        # one of --on / --off is set.
         flag = flag.model_copy(
             update={
                 "kill_switch": args.on,

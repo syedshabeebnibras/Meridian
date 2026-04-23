@@ -5,10 +5,17 @@ non-zero on any hard failure. Call from the deploy script.
 
 Usage:
   STAGING_URL=https://meridian-orch.fly.dev uv run python scripts/staging_smoke.py
+  STAGING_URL=... uv run python scripts/staging_smoke.py --allow-degraded
+
+`--allow-degraded` tolerates orchestrator replies with status "degraded"
+(circuit-open / provider outage). Use in post-deploy CI so a transient
+upstream failure doesn't fail the deploy when the orchestrator is
+correctly serving the cheap fallback path.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import time
@@ -50,6 +57,17 @@ def _request(url: str, query: str) -> dict[str, Any] | None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--allow-degraded",
+        action="store_true",
+        help="Accept status=degraded as a pass (provider outage fallback).",
+    )
+    args = parser.parse_args()
+    accepted_statuses: tuple[str, ...] = ("ok", "refused", "blocked")
+    if args.allow_degraded:
+        accepted_statuses = (*accepted_statuses, "degraded")
+
     url = _env_url()
     print(f"Smoke-testing {url}")
 
@@ -92,7 +110,7 @@ def main() -> int:
         status = reply.get("status")
         all_ok &= _check(
             f"query/{intent}",
-            status in ("ok", "refused", "blocked"),
+            status in accepted_statuses,
             f"status={status}, {latency_ms:.0f}ms",
         )
         # Latency must be under the Section-12 gate.
