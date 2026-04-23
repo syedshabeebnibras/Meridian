@@ -35,6 +35,7 @@ from meridian_contracts import (
     ModelRequest,
     ModelResponse,
     ModelTier,
+    ModelUsage,
     OrchestrationState,
     OrchestratorPhase,
     PromptAssemblyInfo,
@@ -57,6 +58,7 @@ from meridian_model_gateway import CircuitOpenError, ModelClient, ModelDispatchE
 from meridian_output_validator import OutputValidator, ValidationResult
 from meridian_prompt_assembler import Assembler, AssemblyContext
 from meridian_retrieval_client import RetrievalClient
+from meridian_semantic_cache import CacheHit, SemanticCache
 from meridian_session_store import SessionStore
 from meridian_telemetry import Tracer
 from meridian_tool_executor import (
@@ -198,6 +200,7 @@ class Orchestrator:
     user_spend_tracker: PerUserDailyTracker | None = None
     cost_breaker: CostCircuitBreaker | None = None
     session_store: SessionStore | None = None
+    semantic_cache: SemanticCache | None = None
     validator: OutputValidator = field(default_factory=OutputValidator)
     assembler: Assembler = field(default_factory=Assembler)
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
@@ -307,6 +310,16 @@ class Orchestrator:
                 )
                 tier = ModelTier.MID
 
+            # Semantic cache: partition by the sorted retrieved chunk IDs so
+            # two answers grounded in different sources can't collide. On a
+            # hit we skip assembly + dispatch entirely and return the stored
+            # ModelResponse wrapped in a fresh OrchestratorReply.
+            cached_reply = self._try_semantic_cache_lookup(
+                effective_query, retrieval.results, request, state, started
+            )
+            if cached_reply is not None:
+                return cached_reply
+
             # ----- Assemble -----
             state.current_state = OrchestratorPhase.ASSEMBLED
             template = self.templates.get_active(
@@ -393,6 +406,9 @@ class Orchestrator:
             cost_usd = self._account_cost(model_response, request.user_id)
             if status is OrchestratorStatus.OK:
                 self._persist_turns(request, model_response)
+                self._store_in_semantic_cache(
+                    effective_query, retrieval.results, model_response
+                )
             return OrchestratorReply(
                 request_id=request.request_id,
                 status=status,
@@ -536,6 +552,70 @@ class Orchestrator:
     def _stage_ms(self, started: float, *, previous: int | None = None) -> int:
         elapsed_ms = int((self.clock() - started) * 1000)
         return elapsed_ms - (previous or 0)
+
+    def _semantic_cache_partition_key(self, docs: list[Any]) -> str:
+        """Partition key = sorted retrieved chunk IDs, joined.
+
+        Queries answered against disjoint doc sets must not share a cache
+        entry — otherwise the same question across two tenants' docs
+        would bleed. When no docs were retrieved, we use a sentinel so
+        un-grounded answers bucket together.
+        """
+        if not docs:
+            return "no-docs"
+        return "|".join(sorted(getattr(d, "chunk_id", "") for d in docs))
+
+    def _try_semantic_cache_lookup(
+        self,
+        query: str,
+        docs: list[Any],
+        request: UserRequest,
+        state: OrchestrationState,
+        started: float,
+    ) -> OrchestratorReply | None:
+        """Check the semantic cache; on HIT return a short-circuit reply.
+
+        Returns None on MISS or when the cache isn't configured."""
+        if self.semantic_cache is None:
+            return None
+        partition = self._semantic_cache_partition_key(docs)
+        result = self.semantic_cache.lookup(query=query, partition_key=partition)
+        if not isinstance(result, CacheHit):
+            return None
+        state.current_state = OrchestratorPhase.COMPLETED
+        state.timings_ms.total = self._stage_ms(started)
+        # Reuse the minimum shape — downstream consumers of OrchestratorReply
+        # don't need a full ModelResponse on a cache hit (no token counts).
+        cached_response = ModelResponse(
+            id=f"cache_{request.request_id}",
+            model="cache",
+            content=result.response_content,
+            usage=ModelUsage(input_tokens=0, output_tokens=0),
+            latency_ms=0,
+        )
+        self._persist_turns(request, cached_response)
+        return OrchestratorReply(
+            request_id=request.request_id,
+            status=OrchestratorStatus.OK,
+            model_response=cached_response,
+            orchestration_state=state,
+            cost_usd=0.0,
+        )
+
+    def _store_in_semantic_cache(
+        self,
+        query: str,
+        docs: list[Any],
+        response: ModelResponse,
+    ) -> None:
+        if self.semantic_cache is None:
+            return
+        partition = self._semantic_cache_partition_key(docs)
+        self.semantic_cache.store(
+            query=query,
+            partition_key=partition,
+            response_content=response.content,
+        )
 
     def _persist_turns(self, request: UserRequest, response: ModelResponse) -> None:
         """Append the user turn + assistant turn to the session store on success.

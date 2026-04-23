@@ -333,6 +333,44 @@ def test_p95_latency_under_four_seconds() -> None:
     assert statistics.mean(samples) < 0.2
 
 
+# ---- Semantic cache (B1) --------------------------------------------------
+def test_semantic_cache_hit_short_circuits_dispatch() -> None:
+    """An identical follow-up query served from retrieval with the same docs
+    should hit the cache and skip the mid-tier model call."""
+    from meridian_semantic_cache import InMemorySemanticCache, StaticEmbedding
+
+    cache = InMemorySemanticCache(embedding_model=StaticEmbedding())
+    scripted = ScriptedClient(
+        {
+            "meridian-small": {"intent": "grounded_qa", "confidence": 0.95, "model_tier": "mid"},
+            "meridian-mid": _valid_qa_content(),
+        }
+    )
+    orch = Orchestrator(
+        templates=FileTemplateProvider(),
+        retrieval=_mock_retrieval(),
+        model_client=scripted,
+        semantic_cache=cache,
+        config=OrchestratorConfig(environment="test"),
+    )
+
+    # First call: MISS → model is invoked → stored.
+    reply1 = orch.handle(_user_request())
+    assert reply1.status is OrchestratorStatus.OK
+    first_mid_calls = len([c for c in scripted.calls if c.model == "meridian-mid"])
+    assert first_mid_calls == 1
+
+    # Second call: HIT → short-circuit; mid-tier count must NOT grow.
+    reply2 = orch.handle(_user_request())
+    assert reply2.status is OrchestratorStatus.OK
+    second_mid_calls = len([c for c in scripted.calls if c.model == "meridian-mid"])
+    assert second_mid_calls == 1, "semantic cache should have skipped the second mid call"
+    # Cached reply reports zero cost.
+    assert reply2.cost_usd == 0.0
+    assert reply2.model_response is not None
+    assert reply2.model_response.model == "cache"
+
+
 # ---- Cost circuit breaker (B4) --------------------------------------------
 def test_cost_breaker_degrades_frontier_to_mid_when_open() -> None:
     """When the CostCircuitBreaker is open, a frontier-tier classification

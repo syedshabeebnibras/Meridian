@@ -16,6 +16,7 @@ dependencies = [
     "meridian-ops",
     "meridian-model-gateway",
     "meridian-retrieval-client",
+    "meridian-semantic-cache",
     "meridian-tool-executor",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",

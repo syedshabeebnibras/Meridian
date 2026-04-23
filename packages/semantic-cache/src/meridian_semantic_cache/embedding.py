@@ -1,15 +1,18 @@
 """Embedding Protocol + deterministic in-process model for tests.
 
-Phase 9 wires the real OpenAI / Voyage / Cohere embedding call. The
-StaticEmbedding here uses sha256 → unit vector for deterministic tests
-that don't need semantic meaning.
+Production uses OpenAIEmbedding (text-embedding-3-small by default). The
+StaticEmbedding uses sha256 → unit vector for deterministic tests that
+don't need semantic meaning.
 """
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Protocol
+
+import httpx
 
 
 class EmbeddingModel(Protocol):
@@ -41,3 +44,36 @@ class StaticEmbedding:
         if norm == 0:
             return values
         return [v / norm for v in values]
+
+
+@dataclass
+class OpenAIEmbedding:
+    """Real OpenAI embeddings via the /v1/embeddings HTTP endpoint.
+
+    We hit the HTTP API directly instead of the `openai` SDK so the
+    package doesn't pull in a heavy transitive dep (and so the same
+    adapter works whether LiteLLM is in front of us or not).
+    """
+
+    model: str = "text-embedding-3-small"
+    dimension: int = 1536  # default for text-embedding-3-small
+    api_key: str = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", ""))
+    base_url: str = field(
+        default_factory=lambda: os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    )
+    timeout_s: float = 10.0
+
+    def embed(self, text: str) -> list[float]:
+        if not self.api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY not set; cannot call OpenAI embeddings API"
+            )
+        response = httpx.post(
+            f"{self.base_url.rstrip('/')}/embeddings",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model, "input": text},
+            timeout=self.timeout_s,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return list(payload["data"][0]["embedding"])

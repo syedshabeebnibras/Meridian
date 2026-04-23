@@ -36,6 +36,12 @@ from meridian_retrieval_client import (
     ThresholdingClient,
 )
 from meridian_retrieval_client.mock import FixtureEntry
+from meridian_semantic_cache import (
+    InMemorySemanticCache,
+    OpenAIEmbedding,
+    SemanticCache,
+    StaticEmbedding,
+)
 from meridian_session_store import InMemorySessionStore, RedisSessionStore, SessionStore
 from meridian_telemetry import OTelExporter, Tracer
 from sqlalchemy import create_engine
@@ -114,6 +120,27 @@ def _build_session_store() -> SessionStore:
     return RedisSessionStore(redis_client=client)
 
 
+def _build_semantic_cache() -> SemanticCache | None:
+    """Opt-in semantic cache. Disabled by default so local dev doesn't
+    hit OpenAI's embeddings endpoint on every request. Set
+    MERIDIAN_SEMANTIC_CACHE_ENABLED=true to enable.
+
+    When OPENAI_API_KEY is present we use real OpenAI embeddings; otherwise
+    we fall back to StaticEmbedding which is fast + free but only useful
+    for exact-query repeats.
+    """
+    if os.environ.get("MERIDIAN_SEMANTIC_CACHE_ENABLED", "false").lower() not in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return None
+    embedding: OpenAIEmbedding | StaticEmbedding = (
+        OpenAIEmbedding() if os.environ.get("OPENAI_API_KEY") else StaticEmbedding()
+    )
+    return InMemorySemanticCache(embedding_model=embedding)
+
+
 def _build_retrieval_client() -> MockRetrievalClient | ThresholdingClient:
     base_url = os.environ.get("RAG_BASE_URL", "")
     if not base_url:
@@ -141,6 +168,7 @@ def _orchestrator() -> Orchestrator:
         user_spend_tracker=PerUserDailyTracker(),
         cost_breaker=CostCircuitBreaker(daily_budget_usd=daily_budget),
         session_store=_build_session_store(),
+        semantic_cache=_build_semantic_cache(),
         config=OrchestratorConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     )
 

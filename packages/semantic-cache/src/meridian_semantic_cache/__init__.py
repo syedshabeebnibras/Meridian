@@ -15,7 +15,7 @@ from meridian_semantic_cache.cache import (
     CacheMiss,
     SemanticCache,
 )
-from meridian_semantic_cache.embedding import EmbeddingModel, StaticEmbedding
+from meridian_semantic_cache.embedding import EmbeddingModel, OpenAIEmbedding, StaticEmbedding
 from meridian_semantic_cache.memory import InMemorySemanticCache
 from meridian_semantic_cache.postgres import PostgresSemanticCache
 
@@ -25,6 +25,7 @@ __all__ = [
     "CacheMiss",
     "EmbeddingModel",
     "InMemorySemanticCache",
+    "OpenAIEmbedding",
     "PostgresSemanticCache",
     "SemanticCache",
     "StaticEmbedding",
