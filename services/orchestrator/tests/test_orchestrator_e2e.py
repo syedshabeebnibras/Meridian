@@ -331,3 +331,115 @@ def test_p95_latency_under_four_seconds() -> None:
     p95 = samples[int(len(samples) * 0.95) - 1]
     assert p95 < 4.0, f"p95 latency {p95:.3f}s >= 4s on stub run"
     assert statistics.mean(samples) < 0.2
+
+
+# ---- Session memory (B2) --------------------------------------------------
+def test_session_store_hydrates_and_appends_on_success() -> None:
+    """SessionStore: empty history triggers hydrate; successful reply appends
+    the user+assistant turn so the next request sees conversation context."""
+    from meridian_session_store import InMemorySessionStore
+
+    store = InMemorySessionStore()
+    scripted = ScriptedClient(
+        {
+            "meridian-small": {"intent": "grounded_qa", "confidence": 0.95, "model_tier": "mid"},
+            "meridian-mid": _valid_qa_content(),
+        }
+    )
+    orch = Orchestrator(
+        templates=FileTemplateProvider(),
+        retrieval=_mock_retrieval(),
+        model_client=scripted,
+        session_store=store,
+        config=OrchestratorConfig(environment="test"),
+    )
+
+    # First call: store is empty, so nothing is hydrated; on OK both turns persist.
+    reply1 = orch.handle(_user_request("What is the escalation procedure for a P1 outage?"))
+    assert reply1.status is OrchestratorStatus.OK
+    stored = store.get("s_1")
+    assert [t.role for t in stored] == ["user", "assistant"]
+    assert "P1 outage" in stored[0].content
+    # Assistant turn is the natural-language answer, not the whole JSON blob.
+    assert "on-call SRE" in stored[1].content
+
+
+def test_session_store_hydrates_when_history_empty() -> None:
+    """Pre-seeded store + empty inline history → history is hydrated into the
+    UserRequest the assembler sees."""
+    from meridian_contracts import ConversationTurn
+    from meridian_session_store import InMemorySessionStore
+
+    store = InMemorySessionStore()
+    t0 = datetime.now(tz=UTC)
+    store.append("s_1", ConversationTurn(role="user", content="earlier-user", timestamp=t0))
+    store.append(
+        "s_1", ConversationTurn(role="assistant", content="earlier-assistant", timestamp=t0)
+    )
+
+    scripted = ScriptedClient(
+        {
+            "meridian-small": {"intent": "grounded_qa", "confidence": 0.95, "model_tier": "mid"},
+            "meridian-mid": _valid_qa_content(),
+        }
+    )
+    orch = Orchestrator(
+        templates=FileTemplateProvider(),
+        retrieval=_mock_retrieval(),
+        model_client=scripted,
+        session_store=store,
+        config=OrchestratorConfig(environment="test"),
+    )
+
+    reply = orch.handle(_user_request())
+    assert reply.status is OrchestratorStatus.OK
+    # The assembler received the hydrated history — it ends up baked into the
+    # prompt messages shipped to the mid-tier model. `earlier-user` should
+    # appear somewhere in the prompt text.
+    mid_calls = [c for c in scripted.calls if c.model == "meridian-mid"]
+    assert mid_calls, "expected at least one mid-tier call"
+    prompt_text = "\n".join(str(m) for call in mid_calls for m in call.messages)
+    assert "earlier-user" in prompt_text
+
+
+def test_session_store_skipped_when_history_provided_inline() -> None:
+    """An explicit conversation_history on the request short-circuits hydration."""
+    from meridian_contracts import ConversationTurn
+    from meridian_session_store import InMemorySessionStore
+
+    store = InMemorySessionStore()
+    # Pre-seed the store with one turn that SHOULD NOT be loaded.
+    store.append(
+        "s_1",
+        ConversationTurn(role="user", content="SHOULD-NOT-LEAK", timestamp=datetime.now(tz=UTC)),
+    )
+    scripted = ScriptedClient(
+        {
+            "meridian-small": {"intent": "grounded_qa", "confidence": 0.95, "model_tier": "mid"},
+            "meridian-mid": _valid_qa_content(),
+        }
+    )
+    orch = Orchestrator(
+        templates=FileTemplateProvider(),
+        retrieval=_mock_retrieval(),
+        model_client=scripted,
+        session_store=store,
+        config=OrchestratorConfig(environment="test"),
+    )
+    req = UserRequest(
+        request_id="req_inline",
+        user_id="u_alice",
+        session_id="s_1",
+        query="P1 outage?",
+        conversation_history=[
+            ConversationTurn(
+                role="user", content="earlier turn", timestamp=datetime.now(tz=UTC)
+            )
+        ],
+    )
+    reply = orch.handle(req)
+    assert reply.status is OrchestratorStatus.OK
+    # After success the store is still appended to — but the leaked content
+    # must not have reached the model.
+    for call in scripted.calls:
+        assert "SHOULD-NOT-LEAK" not in str(call)

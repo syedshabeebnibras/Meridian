@@ -34,6 +34,7 @@ from meridian_retrieval_client import (
     ThresholdingClient,
 )
 from meridian_retrieval_client.mock import FixtureEntry
+from meridian_session_store import InMemorySessionStore, RedisSessionStore, SessionStore
 from meridian_telemetry import OTelExporter, Tracer
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -94,6 +95,23 @@ def _build_template_provider() -> TemplateProvider:
     return _RegistryTemplateProvider(PromptRegistry(session_factory))
 
 
+def _build_session_store() -> SessionStore:
+    """RedisSessionStore when REDIS_URL is configured, else in-memory.
+
+    In-memory is only safe for single-process dev/test — the store dies
+    with the worker. Production wires REDIS_URL.
+    """
+    redis_url = os.environ.get("REDIS_URL", "")
+    if not redis_url:
+        return InMemorySessionStore()
+    try:
+        import redis  # imported lazily to keep the dep optional in tests
+    except ImportError:
+        return InMemorySessionStore()
+    client = redis.Redis.from_url(redis_url)
+    return RedisSessionStore(redis_client=client)
+
+
 def _build_retrieval_client() -> MockRetrievalClient | ThresholdingClient:
     base_url = os.environ.get("RAG_BASE_URL", "")
     if not base_url:
@@ -118,6 +136,7 @@ def _orchestrator() -> Orchestrator:
         tracer=tracer,
         cost_accountant=CostAccountant(),
         user_spend_tracker=PerUserDailyTracker(),
+        session_store=_build_session_store(),
         config=OrchestratorConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     )
 

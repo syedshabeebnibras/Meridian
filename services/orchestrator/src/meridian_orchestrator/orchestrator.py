@@ -23,11 +23,13 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from meridian_contracts import (
     ClassificationResult,
+    ConversationTurn,
     DispatchInfo,
     Intent,
     ModelRequest,
@@ -50,6 +52,7 @@ from meridian_model_gateway import CircuitOpenError, ModelClient, ModelDispatchE
 from meridian_output_validator import OutputValidator, ValidationResult
 from meridian_prompt_assembler import Assembler, AssemblyContext
 from meridian_retrieval_client import RetrievalClient
+from meridian_session_store import SessionStore
 from meridian_telemetry import Tracer
 from meridian_tool_executor import (
     InvalidParametersError,
@@ -188,10 +191,12 @@ class Orchestrator:
     tracer: Tracer = field(default_factory=Tracer)
     cost_accountant: CostAccountant | None = None
     user_spend_tracker: PerUserDailyTracker | None = None
+    session_store: SessionStore | None = None
     validator: OutputValidator = field(default_factory=OutputValidator)
     assembler: Assembler = field(default_factory=Assembler)
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
     clock: Callable[[], float] = time.perf_counter
+    wall_clock: Callable[[], datetime] = field(default=lambda: datetime.now(tz=UTC))
 
     # ------------------------------------------------------------------
     # public entry point
@@ -203,6 +208,18 @@ class Orchestrator:
         )
         started = self.clock()
         timings = state.timings_ms
+
+        # Hydrate conversation_history from the session store if the caller
+        # didn't supply one inline. An explicit list (even empty-on-purpose in
+        # some edge cases) is respected; we only backfill when empty.
+        if (
+            self.session_store is not None
+            and not request.conversation_history
+            and request.session_id
+        ):
+            hydrated = self.session_store.get(request.session_id)
+            if hydrated:
+                request = request.model_copy(update={"conversation_history": hydrated})
 
         input_guardrail_result: PipelineResult | None = None
         try:
@@ -355,6 +372,8 @@ class Orchestrator:
             timings.total = self._stage_ms(started)
             status = OrchestratorStatus.OK if validation.valid else OrchestratorStatus.FAILED
             cost_usd = self._account_cost(model_response, request.user_id)
+            if status is OrchestratorStatus.OK:
+                self._persist_turns(request, model_response)
             return OrchestratorReply(
                 request_id=request.request_id,
                 status=status,
@@ -498,6 +517,27 @@ class Orchestrator:
     def _stage_ms(self, started: float, *, previous: int | None = None) -> int:
         elapsed_ms = int((self.clock() - started) * 1000)
         return elapsed_ms - (previous or 0)
+
+    def _persist_turns(self, request: UserRequest, response: ModelResponse) -> None:
+        """Append the user turn + assistant turn to the session store on success.
+
+        Skipped when no store is wired or no session_id is present. The
+        assistant text is the natural-language answer extracted from the
+        structured response; if the response has no plain-text answer (e.g.
+        tool responses), we persist an empty string placeholder so the turn
+        still roundtrips.
+        """
+        if self.session_store is None or not request.session_id:
+            return
+        now = self.wall_clock()
+        user_turn = ConversationTurn(role="user", content=request.query, timestamp=now)
+        assistant_turn = ConversationTurn(
+            role="assistant",
+            content=_extract_answer_text(response),
+            timestamp=now,
+        )
+        self.session_store.append(request.session_id, user_turn)
+        self.session_store.append(request.session_id, assistant_turn)
 
     def _account_cost(self, response: ModelResponse, user_id: str) -> float | None:
         """If cost accounting is configured, compute per-request cost and update
