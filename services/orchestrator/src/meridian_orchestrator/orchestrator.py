@@ -46,7 +46,12 @@ from meridian_contracts import (
     ToolValidation,
     UserRequest,
 )
-from meridian_cost_accounting import CostAccountant, PerUserDailyTracker
+from meridian_cost_accounting import (
+    CostAccountant,
+    CostBreakerState,
+    CostCircuitBreaker,
+    PerUserDailyTracker,
+)
 from meridian_guardrails import GuardrailPipeline, PipelineResult
 from meridian_model_gateway import CircuitOpenError, ModelClient, ModelDispatchError
 from meridian_output_validator import OutputValidator, ValidationResult
@@ -191,6 +196,7 @@ class Orchestrator:
     tracer: Tracer = field(default_factory=Tracer)
     cost_accountant: CostAccountant | None = None
     user_spend_tracker: PerUserDailyTracker | None = None
+    cost_breaker: CostCircuitBreaker | None = None
     session_store: SessionStore | None = None
     validator: OutputValidator = field(default_factory=OutputValidator)
     assembler: Assembler = field(default_factory=Assembler)
@@ -287,6 +293,19 @@ class Orchestrator:
                 upgrade_threshold=self.config.upgrade_threshold,
             )
             assert tier is not None  # already validated above
+
+            # Cost circuit breaker: when daily spend has exceeded the overrun
+            # ratio, degrade FRONTIER to MID rather than 503'ing. We still
+            # serve an answer — just with a cheaper model.
+            if (
+                self.cost_breaker is not None
+                and tier is ModelTier.FRONTIER
+                and self.cost_breaker.state is CostBreakerState.OPEN
+            ):
+                state.errors.append(
+                    "cost_breaker_open: degraded frontier → mid"
+                )
+                tier = ModelTier.MID
 
             # ----- Assemble -----
             state.current_state = OrchestratorPhase.ASSEMBLED
@@ -541,12 +560,15 @@ class Orchestrator:
 
     def _account_cost(self, response: ModelResponse, user_id: str) -> float | None:
         """If cost accounting is configured, compute per-request cost and update
-        the per-user daily tracker. Returns USD as a float or None if disabled."""
+        the per-user daily tracker + global cost breaker. Returns USD as a
+        float or None if disabled."""
         if self.cost_accountant is None:
             return None
         breakdown = self.cost_accountant.cost_of(response)
         if self.user_spend_tracker is not None:
             self.user_spend_tracker.record(user_id, breakdown.total_usd)
+        if self.cost_breaker is not None:
+            self.cost_breaker.record(breakdown.total_usd)
         return float(breakdown.total_usd)
 
     def _refuse(

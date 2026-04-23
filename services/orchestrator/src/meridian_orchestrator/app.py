@@ -11,6 +11,7 @@ module is the production wiring.
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from meridian_contracts import (
     PromptTemplate,
     TokenBudget,
 )
-from meridian_cost_accounting import CostAccountant, PerUserDailyTracker
+from meridian_cost_accounting import CostAccountant, CostCircuitBreaker, PerUserDailyTracker
 from meridian_model_gateway import resilient_client
 from meridian_ops import TokenBucketRateLimiter
 from meridian_prompt_registry import ActiveTemplateNotFoundError, PromptRegistry
@@ -130,6 +131,7 @@ def _orchestrator() -> Orchestrator:
         )
     else:
         tracer = Tracer(service="meridian-orchestrator")
+    daily_budget = Decimal(os.environ.get("MERIDIAN_DAILY_BUDGET_USD", "100"))
     return Orchestrator(
         templates=_build_template_provider(),
         retrieval=_build_retrieval_client(),
@@ -137,6 +139,7 @@ def _orchestrator() -> Orchestrator:
         tracer=tracer,
         cost_accountant=CostAccountant(),
         user_spend_tracker=PerUserDailyTracker(),
+        cost_breaker=CostCircuitBreaker(daily_budget_usd=daily_budget),
         session_store=_build_session_store(),
         config=OrchestratorConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     )

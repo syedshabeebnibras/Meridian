@@ -333,6 +333,53 @@ def test_p95_latency_under_four_seconds() -> None:
     assert statistics.mean(samples) < 0.2
 
 
+# ---- Cost circuit breaker (B4) --------------------------------------------
+def test_cost_breaker_degrades_frontier_to_mid_when_open() -> None:
+    """When the CostCircuitBreaker is open, a frontier-tier classification
+    still gets served — just from the mid-tier model. The user gets an
+    answer, we get to stop bleeding money."""
+    from decimal import Decimal
+
+    from meridian_cost_accounting import CostCircuitBreaker
+
+    # Seed the breaker well past its budget so state == OPEN.
+    breaker = CostCircuitBreaker(daily_budget_usd=Decimal("1"))
+    breaker.record(Decimal("100"))  # 100x over budget
+    assert breaker.state.value == "open"
+
+    scripted = ScriptedClient(
+        {
+            # Classifier demands FRONTIER with high confidence.
+            "meridian-small": {
+                "intent": "grounded_qa",
+                "confidence": 0.99,
+                "model_tier": "frontier",
+            },
+            # Mid responds with a valid answer — this is what we should
+            # actually call through to under an open breaker.
+            "meridian-mid": _valid_qa_content(),
+        }
+    )
+
+    orch = Orchestrator(
+        templates=FileTemplateProvider(),
+        retrieval=_mock_retrieval(),
+        model_client=scripted,
+        cost_breaker=breaker,
+        config=OrchestratorConfig(environment="test"),
+    )
+    reply = orch.handle(_user_request())
+
+    assert reply.status is OrchestratorStatus.OK
+    # Frontier should have been skipped entirely.
+    frontier_calls = [c for c in scripted.calls if c.model == "meridian-frontier"]
+    mid_calls = [c for c in scripted.calls if c.model == "meridian-mid"]
+    assert not frontier_calls, "frontier must be skipped when breaker is open"
+    assert mid_calls, "mid must be called as fallback"
+    # State exposes the degradation for observability.
+    assert any("cost_breaker_open" in e for e in reply.orchestration_state.errors)
+
+
 # ---- Session memory (B2) --------------------------------------------------
 def test_session_store_hydrates_and_appends_on_success() -> None:
     """SessionStore: empty history triggers hydrate; successful reply appends
