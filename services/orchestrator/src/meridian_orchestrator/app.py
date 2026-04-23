@@ -26,6 +26,7 @@ from meridian_contracts import (
 )
 from meridian_cost_accounting import CostAccountant, PerUserDailyTracker
 from meridian_model_gateway import resilient_client
+from meridian_ops import TokenBucketRateLimiter
 from meridian_prompt_registry import ActiveTemplateNotFoundError, PromptRegistry
 from meridian_retrieval_client import (
     HttpRetrievalClient,
@@ -153,8 +154,20 @@ def _readiness_check() -> bool:
     return True
 
 
+def _build_rate_limiter() -> TokenBucketRateLimiter | None:
+    """Opt-in per-user rate limiter. Disabled (None) when
+    MERIDIAN_RATELIMIT_ENABLED is unset/false so local dev doesn't throttle
+    itself during load tests."""
+    if os.environ.get("MERIDIAN_RATELIMIT_ENABLED", "true").lower() not in ("1", "true", "yes"):
+        return None
+    capacity = float(os.environ.get("MERIDIAN_RATELIMIT_BURST", "30"))
+    refill = float(os.environ.get("MERIDIAN_RATELIMIT_PER_SECOND", "1"))
+    return TokenBucketRateLimiter(capacity=capacity, refill_per_second=refill)
+
+
 app: FastAPI = build_app(
     _orchestrator(),
     config=AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     readiness_check=_readiness_check,
+    rate_limiter=_build_rate_limiter(),
 )

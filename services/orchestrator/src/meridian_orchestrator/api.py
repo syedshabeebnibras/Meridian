@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from meridian_contracts import UserRequest
 from meridian_feature_flags import RolloutService
+from meridian_ops import RateLimitExceededError, TokenBucketRateLimiter
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
@@ -78,6 +79,7 @@ def build_app(
     readiness_check: Callable[[], bool] | None = None,
     rollout: RolloutService | None = None,
     feedback_store: FeedbackStore | None = None,
+    rate_limiter: TokenBucketRateLimiter | None = None,
 ) -> FastAPI:
     """Build the FastAPI app.
 
@@ -85,6 +87,9 @@ def build_app(
     the rollout. When None, every request is allowed (useful for tests).
 
     `feedback_store`: optional; if None, /v1/feedback returns 501.
+
+    `rate_limiter`: optional per-user token-bucket. When provided, /v1/chat
+    returns 429 with a Retry-After header if the user is over their burst.
     """
     config = config or AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging"))
 
@@ -118,6 +123,17 @@ def build_app(
 
     @app.post("/v1/chat", response_model=None)
     def chat(request: UserRequest) -> OrchestratorReply:
+        if rate_limiter is not None:
+            try:
+                rate_limiter.allow(request.user_id)
+            except RateLimitExceededError as exc:
+                # Retry-After of 1s — matches the default refill rate. Clients
+                # doing exponential backoff will quickly find the sustained rate.
+                raise HTTPException(
+                    status_code=429,
+                    detail=str(exc),
+                    headers={"Retry-After": "1"},
+                ) from exc
         if rollout is not None:
             decision = rollout.evaluate(config.flag_name, request.user_id)
             if not decision.allowed:

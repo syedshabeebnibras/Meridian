@@ -13,6 +13,7 @@ dependencies = [
     "meridian-prompt-assembler",
     "meridian-prompt-registry",
     "meridian-session-store",
+    "meridian-ops",
     "meridian-model-gateway",
     "meridian-retrieval-client",
     "meridian-tool-executor",

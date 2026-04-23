@@ -145,6 +145,38 @@ async def test_metrics_returns_prometheus_format(client: httpx.AsyncClient) -> N
     assert "# HELP" in response.text
 
 
+async def test_chat_returns_429_when_rate_limit_exceeded() -> None:
+    """A user over the burst capacity gets 429 with Retry-After — orchestrator
+    is never invoked so we don't burn compute on throttled traffic."""
+    from meridian_ops import TokenBucketRateLimiter
+
+    # capacity=1 → 2nd call trips the limiter.
+    limiter = TokenBucketRateLimiter(capacity=1.0, refill_per_second=0.0)
+    app = build_app(
+        _orchestrator(),
+        config=AppConfig(environment="test"),
+        rate_limiter=limiter,
+    )
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "request_id": "req_rl001",
+        "user_id": "u_ratelimit",
+        "session_id": "s",
+        "query": "P1 outage?",
+        "conversation_history": [],
+        "metadata": {},
+    }
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+        first = await c.post("/v1/chat", json=payload)
+        assert first.status_code == 200
+
+        second = await c.post(
+            "/v1/chat", json={**payload, "request_id": "req_rl002"}
+        )
+        assert second.status_code == 429
+        assert second.headers.get("retry-after") == "1"
+
+
 async def test_chat_returns_orchestrator_reply(client: httpx.AsyncClient) -> None:
     payload = {
         "request_id": "req_api001",
