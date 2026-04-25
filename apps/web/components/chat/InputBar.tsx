@@ -31,6 +31,9 @@ export function InputBar({
 
   useEffect(() => {
     if (prefill != null) {
+      // Prefill is an explicit external event from the prompt picker.
+      // Syncing it into the controlled textarea is the intended effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setValue(prefill);
       onPrefillConsumed?.();
       textareaRef.current?.focus();

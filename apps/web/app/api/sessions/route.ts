@@ -17,7 +17,7 @@ const createSchema = z.object({
 
 export async function GET(): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -30,7 +30,7 @@ export async function GET(): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     return authErrorResponse(err);
   }

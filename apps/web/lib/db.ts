@@ -20,7 +20,6 @@ if (!connectionString && process.env.MERIDIAN_ENV === "production") {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __meridian_pg__: Pool | undefined;
 }
 

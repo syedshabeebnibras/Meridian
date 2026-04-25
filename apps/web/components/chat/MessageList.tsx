@@ -21,10 +21,11 @@ const SUGGESTIONS = [
 
 export function MessageList({ messages, onPickPrompt }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const lastMessagePending = messages[messages.length - 1]?.pending;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, messages[messages.length - 1]?.pending]);
+  }, [messages.length, lastMessagePending]);
 
   if (messages.length === 0) {
     return <EmptyState onPickPrompt={onPickPrompt} />;

@@ -23,7 +23,7 @@ const chatSchema = z.object({
 export async function POST(request: Request): Promise<Response> {
   // 1. Auth gate.
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });

@@ -7,7 +7,7 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  outputFileTracingRoot: path.join(appDir, "../.."),
+  ...(process.env.VERCEL ? {} : { outputFileTracingRoot: path.join(appDir, "../..") }),
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],
   },

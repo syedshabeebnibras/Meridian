@@ -61,7 +61,7 @@ Read the project, identify errors and launch blockers, explain how to rectify th
 - Add an offline skip or integration marker for tenant-isolation tests if local no-DB test runs are required.
 
 
-## Fix Launch Blockers and Deploy — status: in progress
+## Fix Launch Blockers and Deploy — status: done
 Date: 2026-04-25
 
 ### Goal
@@ -71,13 +71,59 @@ Fix the launch blockers found in the audit, verify the project locally, and depl
 - [x] **1. Patch deployment wiring** — add missing `ORCH_INTERNAL_KEY` wiring, clarify database URLs, and document required Vercel env vars.
 - [x] **2. Patch web build hygiene** — strengthen ESLint config and avoid local output tracing root ambiguity.
 - [x] **3. Patch test ergonomics** — make DB-only tenant isolation tests skip cleanly when Postgres is unavailable.
-- [ ] **4. Verify locally** — run backend lint/type/tests and web typecheck/lint/tests/build.
-- [ ] **5. Deploy to Vercel** — use Vercel CLI from `apps/web`; stop with exact required action if auth/env/project linking blocks deployment.
-- [ ] **6. Record results** — append evidence, deployed URL or blocker, and remaining production steps.
+- [x] **4. Verify locally** — run backend lint/type/tests and web typecheck/lint/tests/build.
+- [x] **5. Deploy to Vercel** — use Vercel CLI from `apps/web`; stop with exact required action if auth/env/project linking blocks deployment.
+- [x] **6. Record results** — append evidence, deployed URL or blocker, and remaining production steps.
 
 ### Scope boundary
 - Do not add new product features in this pass.
 - Do not invent placeholder production secrets. Deployment can only be complete if real Vercel/database/orchestrator env vars exist.
+
+### Review
+
+**Fixes shipped:**
+
+- Added staging/prod internal-key wiring and docs so the orchestrator does not fail closed unexpectedly.
+- Split compose container DB URL from host-run DB URL with `ORCHESTRATOR_DATABASE_URL`.
+- Added `bootstrap-prompts-staging` and `bootstrap-prompts-prod` Make targets.
+- Completed `apps/web/.env.local.example` with Auth.js, DB, Vercel, and orchestrator env vars.
+- Upgraded the web app to `next@16.2.4`, `react@19.2.5`, `react-dom@19.2.5`, matching React types, and `eslint-config-next@16.2.4` to pass Vercel's vulnerable Next.js gate.
+- Switched production builds to `next build --webpack` for deterministic local/CI builds under the sandbox.
+- Removed network-fetched Google fonts from `next/font/google`; the app now uses the existing CSS font stack.
+- Renamed `middleware.ts` to `proxy.ts` for the Next 16 convention.
+- Strengthened ESLint to load the real Next config and fixed the surfaced lint issues.
+- Added `.vercelignore` so local env/build artifacts are not intentionally shipped.
+- Made DB-only tenant-isolation tests skip when Postgres is unavailable instead of hard-failing local no-DB runs.
+
+**Verification:**
+
+- Backend: `make lint`, `make fmt-check`, `make type`, and `make test` pass in the sandbox. DB-backed tests skip cleanly when localhost Postgres is unavailable.
+- Web: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` pass with Next 16.
+- Staging compose: `env ORCH_INTERNAL_KEY=test-internal-key docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.staging.yml config --quiet` passes.
+- Vercel deploy: production deployment `dpl_J4tayMZJ6Z37RjiXzbzrCbdp2aZe` is `READY`.
+- Public URL check: `curl -I https://web-tawny-nine-43.vercel.app/` returns `HTTP/2 200`.
+
+**Deployment:**
+
+- Production alias: https://web-tawny-nine-43.vercel.app
+- Deployment URL: https://web-bgpw8nxue-syedshabeebnibras-projects.vercel.app
+- Inspect URL: https://vercel.com/syedshabeebnibras-projects/web/5eQn7574ZSc56QRvtxNKTer7fwap
+
+**Database wiring:**
+
+- Created Neon Postgres project `gentle-hill-73999810` for production.
+- Applied Alembic migrations through `0007`.
+- Bootstrapped and activated production prompt templates.
+- Set Vercel production env vars for `AUTH_SECRET`, `AUTH_URL`, `DATABASE_URL_JS`, `MERIDIAN_ENV`, and `ORCH_INTERNAL_KEY`.
+- Redeployed Vercel after env changes; final deployment `dpl_5eQn7574ZSc56QRvtxNKTer7fwap` is `READY`.
+- Verified `https://web-tawny-nine-43.vercel.app/` returns `HTTP/2 200`.
+- Verified `https://web-tawny-nine-43.vercel.app/api/auth/session` returns `null` for an anonymous request, which confirms the Auth.js route is live.
+
+**Remaining production wiring that requires real secrets/services:**
+
+- Set `ORCH_URL` in Vercel once the Python orchestrator has a public production URL.
+- Deploy the Python orchestrator separately on Fly/Railway/Render and set the same `ORCH_INTERNAL_KEY`.
+- Run live launch gates against the production/staging orchestrator once model keys and retrieval are wired.
 
 
 ## Phase 1 — Architecture and Contracts — status: done

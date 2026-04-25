@@ -19,7 +19,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     return authError(err);
   }
@@ -31,7 +31,7 @@ export async function GET(_request: Request, { params }: Params): Promise<Respon
 
 export async function PATCH(request: Request, { params }: Params): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     return authError(err);
   }
@@ -50,7 +50,7 @@ export async function PATCH(request: Request, { params }: Params): Promise<Respo
 
 export async function DELETE(_request: Request, { params }: Params): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     return authError(err);
   }

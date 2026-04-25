@@ -1,13 +1,8 @@
 // Flat ESLint config for the Next.js 15 web app.
 
-import { createRequire } from "node:module";
-import path from "node:path";
+import nextConfig from "eslint-config-next";
 
-const require = createRequire(import.meta.url);
-const nextConfigDir = path.dirname(require.resolve("eslint-config-next/package.json"));
-const nextPlugin = require(path.join(nextConfigDir, "../@next/eslint-plugin-next"));
-
-export default [
+const config = [
   {
     ignores: [
       ".next/**",
@@ -17,6 +12,7 @@ export default [
       "next-env.d.ts",
     ],
   },
-  nextPlugin.flatConfig.recommended,
-  nextPlugin.flatConfig.coreWebVitals,
+  ...nextConfig,
 ];
+
+export default config;

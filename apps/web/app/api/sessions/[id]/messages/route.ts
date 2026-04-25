@@ -14,7 +14,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params): Promise<Response> {
   try {
-    var caller = await requireCaller(); // eslint-disable-line no-var
+    var caller = await requireCaller();
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
