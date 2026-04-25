@@ -1,5 +1,6 @@
 // Mirror of the subset of orchestrator contracts the UI consumes.
-// Keep in sync with packages/contracts/src/meridian_contracts/*.
+// Keep in sync with packages/contracts/src/meridian_contracts/* and
+// services/orchestrator/src/meridian_orchestrator/api.py.
 
 export type OrchestratorStatus =
   | "ok"
@@ -23,12 +24,6 @@ export interface GroundedQAContent {
   needs_escalation: boolean;
 }
 
-export interface ClassifierContent {
-  intent: string;
-  confidence: number;
-  model_tier: string;
-}
-
 export interface ModelUsage {
   input_tokens: number;
   output_tokens: number;
@@ -39,7 +34,7 @@ export interface ModelUsage {
 export interface ModelResponse {
   id: string;
   model: string;
-  content: GroundedQAContent | ClassifierContent | string | Record<string, unknown>;
+  content: GroundedQAContent | string | Record<string, unknown>;
   usage: ModelUsage;
   latency_ms: number;
 }
@@ -59,13 +54,8 @@ export interface RetrievalSummary {
 }
 
 export interface TimingsMs {
-  input_guardrails?: number;
   classification?: number;
   retrieval?: number;
-  assembly?: number;
-  dispatch_pending?: number;
-  validation?: number;
-  output_guardrails?: number;
   total?: number;
 }
 
@@ -85,22 +75,27 @@ export interface OrchestratorReply {
   orchestration_state: OrchestrationState;
   error_message?: string | null;
   cost_usd?: number | null;
-  clarification_question?: string | null;
 }
 
-export interface UserRequest {
-  request_id: string;
+// ---------------------------------------------------------------------------
+// Phase 2: server-side sessions
+// ---------------------------------------------------------------------------
+export interface ServerSession {
+  id: string;
+  workspace_id: string;
   user_id: string;
-  session_id: string;
-  query: string;
-  conversation_history?: ConversationTurn[];
-  metadata?: Record<string, string>;
+  title: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface ConversationTurn {
-  role: "user" | "assistant";
+export interface ServerMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
   content: string;
-  timestamp: string;
+  reply: OrchestratorReply | null;
+  created_at: string;
 }
 
 // Client-side representation of a UI message (what the chat renders).
@@ -109,15 +104,7 @@ export interface UIMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  // Only present on assistant messages
   reply?: OrchestratorReply;
   pending?: boolean;
   error?: string;
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  messages: UIMessage[];
 }

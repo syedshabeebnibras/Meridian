@@ -5,11 +5,17 @@ import { MessageCirclePlus, PanelLeftClose, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/shared/Logo";
-import type { Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+/** Minimal shape the sidebar needs — full session row lives in the store. */
+export interface SidebarSession {
+  id: string;
+  title: string;
+  createdAt: number;
+}
+
 interface SessionSidebarProps {
-  sessions: Session[];
+  sessions: SidebarSession[];
   activeId: string | null;
   collapsed: boolean;
   onCollapseToggle: () => void;

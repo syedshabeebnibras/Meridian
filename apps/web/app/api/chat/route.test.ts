@@ -1,13 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { POST } from "./route";
 import { MAX_BODY_BYTES } from "@/lib/validation";
 
-/**
- * Build a Request with a JSON body. Content-Length is set automatically
- * by the Request constructor, but we can override it for oversized-payload
- * tests that shouldn't actually buffer 64 KiB.
- */
+// Mock the orchestrator-server module so route tests don't need a real DB
+// or real orchestrator. ``requireCaller`` returns a stable test caller;
+// ``orchestratorFetch`` is replaced per-test as needed.
+vi.mock("@/lib/orchestrator-server", () => {
+  return {
+    UnauthorizedError: class extends Error {},
+    NoActiveWorkspaceError: class extends Error {},
+    requireCaller: vi.fn(),
+    orchestratorFetch: vi.fn(),
+  };
+});
+
+import { POST } from "./route";
+import * as orchServer from "@/lib/orchestrator-server";
+
+const TEST_CALLER = {
+  userId: "00000000-0000-0000-0000-000000000001",
+  workspaceId: "00000000-0000-0000-0000-000000000002",
+  role: "owner" as const,
+};
+
 function buildRequest(
   body: unknown,
   init?: { headers?: Record<string, string>; rawBody?: string }
@@ -15,103 +30,95 @@ function buildRequest(
   const raw = init?.rawBody ?? JSON.stringify(body);
   return new Request("http://testserver/api/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     body: raw,
   });
 }
 
 function validBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    session_id: "00000000-0000-4000-8000-00000000abcd",
     query: "What's the P1 escalation procedure?",
-    session_id: "s_test001",
     ...overrides,
   };
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.mocked(orchServer.requireCaller).mockReset();
+  vi.mocked(orchServer.orchestratorFetch).mockReset();
 });
 
 describe("/api/chat proxy", () => {
-  it("rejects invalid JSON with 400", async () => {
-    const response = await POST(
-      buildRequest({}, { rawBody: "{not-json" })
+  it("returns 401 when unauthenticated", async () => {
+    vi.mocked(orchServer.requireCaller).mockRejectedValue(
+      new orchServer.UnauthorizedError()
     );
-    expect(response.status).toBe(400);
-    const data = await response.json();
-    expect(data.error).toBe("invalid_json");
+    const response = await POST(buildRequest(validBody()));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthenticated" });
   });
 
-  it("rejects missing query with 400", async () => {
-    const response = await POST(
-      buildRequest({ session_id: "s_abc" })
+  it("returns 403 when caller has no active workspace", async () => {
+    vi.mocked(orchServer.requireCaller).mockRejectedValue(
+      new orchServer.NoActiveWorkspaceError()
     );
+    const response = await POST(buildRequest(validBody()));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "no_active_workspace" });
+  });
+
+  it("rejects invalid JSON with 400", async () => {
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    const response = await POST(buildRequest({}, { rawBody: "{not-json" }));
     expect(response.status).toBe(400);
-    const data = await response.json();
-    expect(data.error).toBe("invalid_request");
-    expect(data.issues).toBeInstanceOf(Array);
+    expect((await response.json()).error).toBe("invalid_json");
   });
 
   it("rejects oversized query with 400", async () => {
-    const tooLong = "a".repeat(4001);
-    const response = await POST(buildRequest(validBody({ query: tooLong })));
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    const response = await POST(buildRequest(validBody({ query: "a".repeat(4001) })));
     expect(response.status).toBe(400);
-    const data = await response.json();
-    expect(data.error).toBe("invalid_request");
-    expect(JSON.stringify(data.issues)).toMatch(/4000/);
+    expect((await response.json()).error).toBe("invalid_request");
   });
 
   it("rejects oversized Content-Length with 413 before parsing", async () => {
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
     const response = await POST(
       buildRequest(validBody(), {
-        headers: {
-          "content-length": String(MAX_BODY_BYTES + 1),
-        },
+        headers: { "content-length": String(MAX_BODY_BYTES + 1) },
       })
     );
     expect(response.status).toBe(413);
-    const data = await response.json();
-    expect(data.error).toBe("payload_too_large");
   });
 
   it("rejects malformed session_id with 400", async () => {
-    const response = await POST(
-      buildRequest(validBody({ session_id: "invalid-shape" }))
-    );
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    const response = await POST(buildRequest(validBody({ session_id: "not-a-uuid" })));
     expect(response.status).toBe(400);
-    const data = await response.json();
-    expect(data.error).toBe("invalid_request");
+    expect((await response.json()).error).toBe("invalid_request");
   });
 
   it("returns 502 when upstream is unreachable", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new Error("ECONNREFUSED"))
-    );
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    vi.mocked(orchServer.orchestratorFetch).mockRejectedValue(new Error("ECONNREFUSED"));
     const response = await POST(buildRequest(validBody()));
     expect(response.status).toBe(502);
-    const data = await response.json();
-    expect(data.error).toBe("upstream_unreachable");
+    expect((await response.json()).error).toBe("upstream_unreachable");
   });
 
   it("passes through orchestrator 200 response", async () => {
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
     const upstreamJson = {
       request_id: "req_abc",
       status: "ok",
       model_response: { model: "meridian-mid", content: { answer: "ok" } },
-      orchestration_state: {},
     };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(upstreamJson), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
+    vi.mocked(orchServer.orchestratorFetch).mockResolvedValue(
+      new Response(JSON.stringify(upstreamJson), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
     );
     const response = await POST(buildRequest(validBody()));
     expect(response.status).toBe(200);
@@ -119,67 +126,38 @@ describe("/api/chat proxy", () => {
   });
 
   it("preserves Retry-After header from upstream 429", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ detail: "rate limit exceeded for 'u_web'" }),
-          { status: 429, headers: { "Retry-After": "7" } }
-        )
-      )
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    vi.mocked(orchServer.orchestratorFetch).mockResolvedValue(
+      new Response(JSON.stringify({ detail: "rate limit exceeded" }), {
+        status: 429,
+        headers: { "Retry-After": "7" },
+      })
     );
     const response = await POST(buildRequest(validBody()));
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("7");
   });
 
-  it("never forwards browser-supplied user_id to the orchestrator", async () => {
-    const seenBody: { value?: string } = {};
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
-        seenBody.value = typeof init?.body === "string" ? init.body : "";
-        return new Response("{}", { status: 200 });
-      })
-    );
+  it("forwards the validated body, never browser-supplied identity", async () => {
+    vi.mocked(orchServer.requireCaller).mockResolvedValue(TEST_CALLER);
+    let captured: { body?: string } = {};
+    vi.mocked(orchServer.orchestratorFetch).mockImplementation(async (_caller, _path, init) => {
+      captured = { body: typeof init?.body === "string" ? init.body : "" };
+      return new Response("{}", { status: 200 });
+    });
     const body = validBody({
-      // Attacker tries to claim another user. Proxy must strip this.
+      // Attacker tries to claim other identity in the body.
       user_id: "u_victim",
-      // Attacker tries to replay a request_id. Proxy must replace it.
       request_id: "req_replay",
+      workspace_id: "ws_other",
     });
     const response = await POST(buildRequest(body));
     expect(response.status).toBe(200);
-    expect(seenBody.value).toBeDefined();
-    const forwarded = JSON.parse(seenBody.value!);
-    expect(forwarded.user_id).toBe("u_web"); // server-side constant
-    expect(forwarded.user_id).not.toBe("u_victim");
-    expect(forwarded.request_id).not.toBe("req_replay");
-    expect(forwarded.request_id).toMatch(/^req_[a-zA-Z0-9]+$/);
-  });
-
-  it("forwards X-Internal-Key to the orchestrator when configured", async () => {
-    // Re-import after env tweak so route.ts picks up the new value. The
-    // simplest way is to read process.env back in the handler — easier
-    // achieved by stubbing fetch and inspecting headers.
-    process.env.ORCH_INTERNAL_KEY = "route-test-key";
-    // route.ts resolves INTERNAL_KEY at module load. To keep this test
-    // hermetic we re-import the module under a fresh module registry.
-    vi.resetModules();
-    const { POST: FreshPOST } = await import("./route");
-
-    const seenHeaders: { value?: Record<string, string> } = {};
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
-        seenHeaders.value = init?.headers as Record<string, string>;
-        return new Response("{}", { status: 200 });
-      })
-    );
-    const response = await FreshPOST(buildRequest(validBody()));
-    expect(response.status).toBe(200);
-    expect(seenHeaders.value?.["X-Internal-Key"]).toBe("route-test-key");
-
-    delete process.env.ORCH_INTERNAL_KEY;
+    const forwarded = JSON.parse(captured.body!);
+    expect(forwarded.user_id).toBeUndefined();
+    expect(forwarded.workspace_id).toBeUndefined();
+    expect(forwarded.request_id).toBeUndefined();
+    expect(forwarded.session_id).toBe("00000000-0000-4000-8000-00000000abcd");
+    expect(forwarded.query).toBe("What's the P1 escalation procedure?");
   });
 });

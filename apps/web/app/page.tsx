@@ -4,7 +4,7 @@ import { LiveMetrics } from "@/components/landing/LiveMetrics";
 import { StateMachineViz } from "@/components/landing/StateMachineViz";
 import { Nav } from "@/components/shared/Nav";
 
-export default function LandingPage() {
+export default async function LandingPage() {
   return (
     <>
       <Nav />
