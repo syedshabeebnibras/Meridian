@@ -33,9 +33,8 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from dataclasses import dataclass
-
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, status
 

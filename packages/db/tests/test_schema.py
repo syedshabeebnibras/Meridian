@@ -19,6 +19,15 @@ def test_all_expected_tables_registered() -> None:
         "audit_log",
         "few_shot_examples",
         "prompt_audit_log",
+        # Phase 2 tenant + auth layer
+        "users",
+        "workspaces",
+        "memberships",
+        "chat_sessions",
+        "chat_messages",
+        "feedback_records",
+        "audit_events",
+        "usage_records",
     }
     assert expected.issubset(set(Base.metadata.tables.keys()))
 
@@ -35,9 +44,14 @@ def test_alembic_script_graph_loads() -> None:
     cfg.set_main_option("script_location", str(REPO_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     heads = list(script.get_heads())
-    assert heads == ["0004"], f"expected single head '0004', got {heads}"
+    assert heads == ["0005"], f"expected single head '0005', got {heads}"
     # The migration chain must be continuous all the way back.
-    for rev_id, down_id in (("0004", "0003"), ("0003", "0002"), ("0002", "0001")):
+    for rev_id, down_id in (
+        ("0005", "0004"),
+        ("0004", "0003"),
+        ("0003", "0002"),
+        ("0002", "0001"),
+    ):
         rev = script.get_revision(rev_id)
         assert rev is not None and rev.down_revision == down_id, (
             f"{rev_id} must descend from {down_id}"
