@@ -8,8 +8,21 @@
 | timeout        | 1           | immediate                         |
 | other          | 0           | n/a                               |
 
-The retry layer is idempotent w.r.t. the caller — the input ModelRequest is
-not mutated; only the metadata dict gets an `attempt` key stamped on it.
+The retry layer is idempotent w.r.t. the caller — the input ``ModelRequest`` is
+not mutated; only the metadata dict gets an ``attempt`` key stamped on it.
+
+Error sources
+-------------
+``RetryingClient`` handles two equivalent error shapes so tests and the real
+stack exercise the same policy:
+
+1. Raw ``httpx.HTTPStatusError`` / ``httpx.TimeoutException`` /
+   ``httpx.ConnectError`` — used by unit tests that stub the inner client.
+2. ``ModelDispatchError`` with typed ``status_code`` / ``retryable`` fields
+   — emitted by ``LiteLLMClient`` in the real path.
+
+Both reach the same decision tree: 429 ↦ 429 ladder, 5xx ↦ 5xx ladder,
+transport ↦ timeout ladder, anything else ↦ no retry.
 """
 
 from __future__ import annotations
@@ -37,9 +50,15 @@ class RetryPolicy:
     jitter_ratio: float = 0.25  # ±25% of the scheduled delay
 
 
+# Internal tag for the retry decision produced by _classify_exception.
+# - "429" / "5xx" / "timeout" pick the matching ladder
+# - "none" means propagate the failure without retry
+_RetryKind = str
+
+
 @dataclass
 class RetryingClient:
-    """Wraps an inner ModelClient with Section 7's retry policy."""
+    """Wraps an inner ``ModelClient`` with Section 7's retry policy."""
 
     inner: ModelClient
     policy: RetryPolicy = field(default_factory=RetryPolicy)
@@ -54,40 +73,36 @@ class RetryingClient:
             stamped = _stamp_attempt(request, attempt)
             try:
                 return self.inner.chat(stamped)
-            except httpx.HTTPStatusError as exc:
+            except (
+                httpx.HTTPStatusError,
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                ModelDispatchError,
+            ) as exc:
                 last_exc = exc
-                status = exc.response.status_code
-                if status == 429:
-                    delay = self._next_delay(attempt, self.policy.backoff_429)
-                    if attempt - 1 >= self.policy.max_retries_429:
-                        break
-                    self.sleep(delay)
-                    continue
-                if 500 <= status < 600:
-                    delay = self._next_delay(attempt, self.policy.backoff_5xx)
-                    if attempt - 1 >= self.policy.max_retries_5xx:
-                        break
-                    self.sleep(delay)
-                    continue
-                # 4xx (non-429) — do not retry.
-                break
-            except (httpx.TimeoutException, httpx.ConnectError) as exc:
-                last_exc = exc
-                delay = self._next_delay(attempt, self.policy.backoff_timeout)
-                if attempt - 1 >= self.policy.max_retries_timeout:
+                kind = _classify_exception(exc)
+                if kind == "none":
                     break
-                self.sleep(delay)
+                ladder, max_retries = self._ladder_for(kind)
+                if attempt - 1 >= max_retries:
+                    break
+                self.sleep(self._next_delay(attempt, ladder))
                 continue
-            except ModelDispatchError as exc:
-                # Already wrapped by the LiteLLM client — don't double-retry.
-                last_exc = exc
-                break
-        cause = f"{type(last_exc).__name__}: {last_exc}" if last_exc else "<no inner exception>"
-        raise ModelDispatchError(
-            f"LiteLLM call failed after {attempt} attempt(s): {cause}"
-        ) from last_exc
+        # Exhausted — surface a typed ModelDispatchError so downstream callers
+        # (e.g. CircuitBreaker, orchestrator) can read status_code/retryable.
+        if isinstance(last_exc, ModelDispatchError):
+            raise last_exc
+        raise _wrap_as_mde(last_exc, attempts=attempt)
 
     # ------------------------------------------------------------------
+    def _ladder_for(self, kind: _RetryKind) -> tuple[tuple[float, ...], int]:
+        if kind == "429":
+            return self.policy.backoff_429, self.policy.max_retries_429
+        if kind == "5xx":
+            return self.policy.backoff_5xx, self.policy.max_retries_5xx
+        # "timeout"
+        return self.policy.backoff_timeout, self.policy.max_retries_timeout
+
     def _next_delay(self, attempt: int, ladder: tuple[float, ...]) -> float:
         base = ladder[min(attempt - 1, len(ladder) - 1)]
         if self.policy.jitter_ratio <= 0:
@@ -96,8 +111,59 @@ class RetryingClient:
         return max(0.0, base + self.rng.uniform(-spread, spread))
 
 
+def _classify_exception(exc: Exception) -> _RetryKind:
+    """Map an inner-client exception to a retry kind, or 'none'."""
+    if isinstance(exc, ModelDispatchError):
+        if not exc.retryable:
+            return "none"
+        status = exc.status_code
+        if status == 429:
+            return "429"
+        if status is not None and 500 <= status < 600:
+            return "5xx"
+        if status is None:
+            # Transport failure — use the timeout ladder.
+            return "timeout"
+        return "none"
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 429:
+            return "429"
+        if 500 <= status < 600:
+            return "5xx"
+        return "none"
+    if isinstance(exc, httpx.TimeoutException | httpx.ConnectError):
+        return "timeout"
+    return "none"
+
+
+def _wrap_as_mde(exc: Exception | None, *, attempts: int) -> ModelDispatchError:
+    """Final wrap after retries exhausted — keeps the typed contract intact."""
+    if exc is None:
+        return ModelDispatchError(
+            f"LiteLLM call failed after {attempts} attempt(s): <no inner exception>",
+            status_code=None,
+            retryable=False,
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code if exc.response is not None else None
+        body = exc.response.text[:500] if exc.response is not None else ""
+        return ModelDispatchError(
+            f"LiteLLM call failed after {attempts} attempt(s): {status}",
+            status_code=status,
+            response_body=body,
+            cause_type=type(exc).__name__,
+        )
+    return ModelDispatchError(
+        f"LiteLLM call failed after {attempts} attempt(s) ({type(exc).__name__}): {exc}",
+        status_code=None,
+        retryable=False,
+        cause_type=type(exc).__name__,
+    )
+
+
 def _stamp_attempt(request: ModelRequest, attempt: int) -> ModelRequest:
-    """Return a new ModelRequest with `metadata.attempt` set.
+    """Return a new ``ModelRequest`` with ``metadata.attempt`` set.
 
     Idempotency key derivation (Section 7) is the caller's job; we only
     stamp the attempt number so provider logs and our traces line up.
