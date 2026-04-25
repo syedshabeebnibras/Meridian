@@ -64,7 +64,7 @@ export function Hero() {
           className="mt-1 flex flex-col items-center gap-3 sm:flex-row"
         >
           <Button asChild size="lg" className="group">
-            <Link href="/chat">
+            <Link href="/sign-up">
               Start a conversation
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
