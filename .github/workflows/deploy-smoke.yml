@@ -1,0 +1,43 @@
+name: Deploy smoke
+
+# Probes the deployed Vercel URL. Does not deploy anything.
+# Triggers: manual (workflow_dispatch) and hourly cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_url:
+        description: "Override deploy URL (defaults to vars.DEPLOY_URL)"
+        required: false
+        type: string
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Probe deployed Vercel URL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve deploy URL
+        id: url
+        env:
+          INPUT_URL: ${{ inputs.deploy_url }}
+          VAR_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          # Untrusted inputs are read from env vars, never interpolated
+          # directly into the script body.
+          if [ -n "$INPUT_URL" ]; then
+            echo "url=$INPUT_URL" >> "$GITHUB_OUTPUT"
+          elif [ -n "$VAR_URL" ]; then
+            echo "url=$VAR_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://web-tawny-nine-43.vercel.app" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Smoke
+        env:
+          DEPLOY_URL: ${{ steps.url.outputs.url }}
+        run: bash scripts/deploy_smoke.sh
