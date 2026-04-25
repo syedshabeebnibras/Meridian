@@ -430,6 +430,31 @@ class UsageRecordRow(Base):
     )
 
 
+class RequestFeedbackRow(Base):
+    """Durable sink for /v1/feedback (Phase 3).
+
+    The HTTP contract carries plain string ``request_id``/``user_id`` so this
+    table is intentionally decoupled from ``feedback_records`` (which FKs to
+    ``chat_messages``). Append-only.
+    """
+
+    __tablename__ = "request_feedback"
+    __table_args__ = (
+        CheckConstraint("verdict IN ('up', 'down')", name="ck_request_feedback_verdict"),
+        Index("ix_request_feedback_request_id", "request_id"),
+        Index("ix_request_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    verdict: Mapped[str] = mapped_column(String(8), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # Re-export so Alembic's autogenerate sees a single metadata object to diff.
 metadata = Base.metadata
 # JSON is referenced in some CI paths that lack the postgres dialect; keep the

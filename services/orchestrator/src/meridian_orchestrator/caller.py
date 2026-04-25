@@ -16,9 +16,8 @@ changed mid-session, the orchestrator still refuses.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
-
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, status
 from meridian_db.tenants import Role, TenantService

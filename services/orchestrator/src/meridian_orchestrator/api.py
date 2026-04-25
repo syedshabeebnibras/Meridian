@@ -32,18 +32,28 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from meridian_orchestrator.wiring import CapabilityReport
 
 from fastapi import Depends, FastAPI, HTTPException, Path
 from fastapi.responses import PlainTextResponse, Response
 from meridian_contracts import UserRequest
 from meridian_feature_flags import RolloutService
-from meridian_ops import RateLimitExceededError, TokenBucketRateLimiter
+from meridian_ingestion import WORKSPACE_ID, IngestionError, IngestionService
+from meridian_ops import RateLimiter, RateLimitExceededError
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_orchestrator import metrics
+from meridian_orchestrator.admin import AdminOverride
+from meridian_orchestrator.audit import AuditEvent, AuditSink, NullAuditSink, reply_summary
 from meridian_orchestrator.auth import InternalAuthConfig, build_require_internal_key
 from meridian_orchestrator.caller import CallerContext
+from meridian_orchestrator.feedback import (
+    FeedbackStore,
+    InMemoryFeedbackStore,
+)
 from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
 from meridian_orchestrator.sessions import (
     ChatMessageSummary,
@@ -52,6 +62,10 @@ from meridian_orchestrator.sessions import (
     SessionNotFoundError,
     SessionService,
 )
+
+# Re-exports — kept for backwards compatibility with code that imports
+# FeedbackStore / InMemoryFeedbackStore from this module.
+__all__ = ["AppConfig", "FeedbackStore", "InMemoryFeedbackStore", "build_app"]
 
 
 @dataclass
@@ -144,24 +158,8 @@ class FeedbackAck(BaseModel):
     request_id: str
 
 
-class FeedbackStore(Protocol):
-    """Anything that can persist a feedback record. Phase 3 adds a
-    Postgres-backed implementation."""
-
-    def record(self, feedback: FeedbackRequest) -> None: ...
-
-
-@dataclass
-class InMemoryFeedbackStore:
-    entries: list[FeedbackRequest] | None = None
-
-    def __post_init__(self) -> None:
-        if self.entries is None:
-            self.entries = []
-
-    def record(self, feedback: FeedbackRequest) -> None:
-        assert self.entries is not None
-        self.entries.append(feedback)
+# FeedbackStore / InMemoryFeedbackStore moved to meridian_orchestrator.feedback
+# in Phase 3 — re-exported above for back-compat.
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +172,14 @@ def build_app(
     readiness_check: Callable[[], bool] | None = None,
     rollout: RolloutService | None = None,
     feedback_store: FeedbackStore | None = None,
-    rate_limiter: TokenBucketRateLimiter | None = None,
+    rate_limiter: RateLimiter | None = None,
+    admin_override: AdminOverride | None = None,
     auth_config: InternalAuthConfig | None = None,
     session_service: SessionService | None = None,
     require_caller: Callable[..., CallerContext] | None = None,
+    audit_sink: AuditSink | None = None,
+    capability_report: CapabilityReport | None = None,
+    ingestion_service: IngestionService | None = None,
 ) -> FastAPI:
     """Build the FastAPI app.
 
@@ -188,6 +190,7 @@ def build_app(
     config = config or AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging"))
     auth_config = auth_config or InternalAuthConfig.from_env()
     require_internal_key = build_require_internal_key(auth_config)
+    audit = audit_sink or NullAuditSink()
 
     app = FastAPI(
         title="Meridian Orchestrator",
@@ -239,11 +242,15 @@ def build_app(
             except SessionNotFoundError as exc:
                 raise HTTPException(status_code=404, detail="session not found") from exc
 
-            if rate_limiter is not None:
+            ws_id = str(caller.workspace_id)
+            override = admin_override or AdminOverride()
+            if rate_limiter is not None and not override.rate_limit_exempt(ws_id):
                 try:
-                    rate_limiter.allow(f"{caller.workspace_id}:{caller.user_id}")
+                    rate_limiter.allow(f"{caller.workspace_id}:{caller.user_id}:chat")
                 except RateLimitExceededError as rle:
-                    metrics.RATE_LIMITED_TOTAL.inc()
+                    metrics.RATE_LIMITED_TOTAL.labels(
+                        workspace=str(caller.workspace_id), action="chat"
+                    ).inc()
                     raise HTTPException(
                         status_code=429,
                         detail=str(rle),
@@ -259,8 +266,38 @@ def build_app(
                 metadata={**payload.metadata, "workspace_id": str(caller.workspace_id)},
             )
 
-            started = time.perf_counter()
-            reply = orchestrator.handle(user_request)
+            audit.emit(
+                AuditEvent(
+                    request_id=user_request.request_id,
+                    event_type="request.received",
+                    user_id=str(caller.user_id),
+                    session_id=str(payload.session_id),
+                    payload={
+                        "workspace_id": str(caller.workspace_id),
+                        "query_length": len(payload.query),
+                    },
+                )
+            )
+
+            # Thread workspace_id through the contextvar so the local
+            # pgvector retrieval client (when wired) can WHERE-filter on it.
+            # External RAG retrieval clients ignore the contextvar and use
+            # their own auth model.
+            ws_token = WORKSPACE_ID.set(str(caller.workspace_id))
+            try:
+                started = time.perf_counter()
+                reply = orchestrator.handle(user_request)
+            finally:
+                WORKSPACE_ID.reset(ws_token)
+            audit.emit(
+                AuditEvent(
+                    request_id=user_request.request_id,
+                    event_type="request.completed",
+                    user_id=str(caller.user_id),
+                    session_id=str(payload.session_id),
+                    payload=reply_summary(reply),
+                )
+            )
             metrics.REQUEST_DURATION_SECONDS.observe(time.perf_counter() - started)
             metrics.REQUESTS_TOTAL.labels(status=reply.status.value).inc()
             if reply.cost_usd is not None:
@@ -388,6 +425,105 @@ def build_app(
                 raise HTTPException(status_code=404, detail="session not found") from exc
             return Response(status_code=204)
 
+        # --- Documents (Phase 6) ----------------------------------------------
+        if ingestion_service is not None:
+            from fastapi import File, Form, UploadFile
+            from meridian_db.tenants import Role
+
+            max_doc_bytes = int(os.environ.get("MERIDIAN_DOC_MAX_BYTES", str(10 * 1024 * 1024)))
+
+            @app.post(
+                "/v1/documents",
+                dependencies=[Depends(require_internal_key)],
+            )
+            async def upload_document(
+                file: UploadFile = File(...),
+                title: str = Form(default=""),
+                caller: CallerContext = Depends(require_caller),
+            ) -> dict[str, object]:
+                # Anyone above viewer can ingest. Viewers are read-only by spec.
+                caller.require(at_least=Role.MEMBER)
+                data = await file.read()
+                if len(data) > max_doc_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"file exceeds {max_doc_bytes} bytes",
+                    )
+                if len(data) == 0:
+                    raise HTTPException(status_code=400, detail="empty upload")
+                try:
+                    result = ingestion_service.ingest(
+                        workspace_id=caller.workspace_id,
+                        uploaded_by=caller.user_id,
+                        title=title or file.filename or "Untitled",
+                        data=data,
+                        mime_type=file.content_type or "",
+                        source_uri=None,
+                    )
+                except IngestionError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                return {
+                    "document_id": str(result.document_id),
+                    "chunk_count": result.chunk_count,
+                    "byte_size": result.byte_size,
+                }
+
+            @app.get(
+                "/v1/documents",
+                dependencies=[Depends(require_internal_key)],
+            )
+            def list_documents(
+                caller: CallerContext = Depends(require_caller),
+            ) -> list[dict[str, object]]:
+                # Lightweight projection — full metadata stays in the DB.
+                from meridian_db.models import DocumentRow
+                from sqlalchemy import select
+
+                # Reach for the same factory the ingestion service holds. We
+                # don't take a fresh sessionmaker arg to keep the public surface
+                # tight; ingestion already owns one.
+                factory = ingestion_service.session_factory
+                with factory() as session:
+                    rows = (
+                        session.scalars(
+                            select(DocumentRow)
+                            .where(DocumentRow.workspace_id == caller.workspace_id)
+                            .order_by(DocumentRow.created_at.desc())
+                            .limit(200)
+                        )
+                    ).all()
+                return [
+                    {
+                        "id": str(r.id),
+                        "title": r.title,
+                        "status": r.status,
+                        "chunk_count": r.chunk_count,
+                        "byte_size": r.byte_size,
+                        "mime_type": r.mime_type,
+                        "created_at": r.created_at.isoformat(),
+                    }
+                    for r in rows
+                ]
+
+            @app.delete(
+                "/v1/documents/{document_id}",
+                status_code=204,
+                dependencies=[Depends(require_internal_key)],
+            )
+            def delete_document(
+                document_id: uuid.UUID = Path(...),
+                caller: CallerContext = Depends(require_caller),
+            ) -> Response:
+                # Admins/owners only — deleting a document blows away every
+                # chunk, which is more destructive than a session delete.
+                caller.require(at_least=Role.ADMIN)
+                ok = ingestion_service.delete(
+                    workspace_id=caller.workspace_id, document_id=document_id
+                )
+                if not ok:
+                    raise HTTPException(status_code=404, detail="document not found")
+                return Response(status_code=204)
+
     else:
         # -------- Legacy mode (no tenant wiring) -----------------------------
         @app.post(
@@ -398,9 +534,9 @@ def build_app(
         def chat_legacy(request: UserRequest) -> OrchestratorReply:
             if rate_limiter is not None:
                 try:
-                    rate_limiter.allow(request.user_id)
+                    rate_limiter.allow(f"{request.user_id}:chat")
                 except RateLimitExceededError as exc:
-                    metrics.RATE_LIMITED_TOTAL.inc()
+                    metrics.RATE_LIMITED_TOTAL.labels(workspace="legacy", action="chat").inc()
                     raise HTTPException(
                         status_code=429,
                         detail=str(exc),
@@ -416,12 +552,30 @@ def build_app(
                             f"(rollout: {decision.result.value})"
                         ),
                     )
+            audit.emit(
+                AuditEvent(
+                    request_id=request.request_id,
+                    event_type="request.received",
+                    user_id=request.user_id,
+                    session_id=request.session_id,
+                    payload={"query_length": len(request.query), "mode": "legacy"},
+                )
+            )
             started = time.perf_counter()
             reply = orchestrator.handle(request)
             metrics.REQUEST_DURATION_SECONDS.observe(time.perf_counter() - started)
             metrics.REQUESTS_TOTAL.labels(status=reply.status.value).inc()
             if reply.cost_usd is not None:
                 metrics.COST_USD_TOTAL.inc(reply.cost_usd)
+            audit.emit(
+                AuditEvent(
+                    request_id=request.request_id,
+                    event_type="request.completed",
+                    user_id=request.user_id,
+                    session_id=request.session_id,
+                    payload=reply_summary(reply),
+                )
+            )
             return reply
 
     # ------------------------------------------------------------------
@@ -436,6 +590,56 @@ def build_app(
         if feedback_store is None:
             raise HTTPException(status_code=501, detail="feedback collection not configured")
         feedback_store.record(request)
+        audit.emit(
+            AuditEvent(
+                request_id=request.request_id,
+                event_type="feedback.recorded",
+                user_id=request.user_id,
+                payload={"verdict": request.verdict, "comment_length": len(request.comment)},
+            )
+        )
         return FeedbackAck(recorded_at=datetime.now(tz=UTC), request_id=request.request_id)
+
+    # ------------------------------------------------------------------
+    # /debug/config — admin-only redacted capability map (Phase 3)
+    # ------------------------------------------------------------------
+    # Production rule: this endpoint must NEVER expose secrets. The
+    # ``CapabilityReport.to_safe_dict()`` view is the single source of
+    # truth for what's safe to leak — secrets live in env vars and never
+    # touch the report. Access is gated by:
+    #
+    #   1. X-Internal-Key (every protected route).
+    #   2. When tenant-aware mode is on, the caller must hold role >= admin.
+    #      Without tenant-aware mode (legacy path), the route is staging-only:
+    #      production refuses to expose it at all.
+    if capability_report is not None:
+        if require_caller is not None:
+            from meridian_db.tenants import Role
+
+            @app.get(
+                "/debug/config",
+                dependencies=[Depends(require_internal_key)],
+            )
+            def debug_config(
+                caller: CallerContext = Depends(require_caller),
+            ) -> dict[str, object]:
+                caller.require(at_least=Role.ADMIN)
+                return capability_report.to_safe_dict()
+        else:
+            # Legacy path — no caller context to gate on. Allow only outside
+            # production so prod ops never serve unauthenticated capability
+            # info from the legacy app.
+            @app.get(
+                "/debug/config",
+                dependencies=[Depends(require_internal_key)],
+            )
+            def debug_config_legacy() -> dict[str, object]:
+                env = (config.environment or "").lower()
+                if env in ("production", "prod"):
+                    raise HTTPException(
+                        status_code=404,
+                        detail="not available in production without tenant auth",
+                    )
+                return capability_report.to_safe_dict()
 
     return app

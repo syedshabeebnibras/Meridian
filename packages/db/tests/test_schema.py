@@ -44,9 +44,10 @@ def test_alembic_script_graph_loads() -> None:
     cfg.set_main_option("script_location", str(REPO_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     heads = list(script.get_heads())
-    assert heads == ["0005"], f"expected single head '0005', got {heads}"
+    assert heads == ["0006"], f"expected single head '0006', got {heads}"
     # The migration chain must be continuous all the way back.
     for rev_id, down_id in (
+        ("0006", "0005"),
         ("0005", "0004"),
         ("0004", "0003"),
         ("0003", "0002"),
