@@ -137,3 +137,40 @@ def test_capability_report_lists_are_independent() -> None:
     safe = report.to_safe_dict()
     safe["input_guardrails"].append("nope")  # type: ignore[union-attr]
     assert report.input_guardrails == ["regex_pii"]
+
+
+# ---------------------------------------------------------------------------
+# Tool executor — opt-in by env, off by default
+# ---------------------------------------------------------------------------
+def test_tool_executor_disabled_when_env_unset() -> None:
+    from meridian_orchestrator.wiring import build_tool_executor
+
+    report = CapabilityReport(environment="test")
+    assert build_tool_executor(report) is None
+    assert report.tools == []
+
+
+def test_tool_executor_registers_jira_when_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    from meridian_orchestrator.wiring import build_tool_executor
+
+    monkeypatch.setenv("JIRA_BASE_URL", "https://meridian.atlassian.net")
+    monkeypatch.setenv("JIRA_API_TOKEN", "stub")
+    monkeypatch.setenv("JIRA_PROJECT_KEY", "ENG")
+    monkeypatch.setenv("JIRA_USER_EMAIL", "bot@meridian.local")
+
+    report = CapabilityReport(environment="test")
+    executor = build_tool_executor(report)
+    assert executor is not None
+    assert "jira.lookup_status" in report.tools
+    assert "jira.create_ticket" in report.tools
+    assert executor.registry.names()  # at least one tool registered
+
+
+def test_tool_executor_registers_slack_only_when_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    from meridian_orchestrator.wiring import build_tool_executor
+
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-stub")
+    report = CapabilityReport(environment="test")
+    executor = build_tool_executor(report)
+    assert executor is not None
+    assert report.tools == ["slack.send_message"]

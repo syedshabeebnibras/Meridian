@@ -404,7 +404,9 @@ class Orchestrator:
             cost_usd = self._account_cost(model_response, request.user_id)
             if status is OrchestratorStatus.OK:
                 self._persist_turns(request, model_response)
-                self._store_in_semantic_cache(effective_query, retrieval.results, model_response)
+                self._store_in_semantic_cache(
+                    effective_query, retrieval.results, model_response, request
+                )
             return OrchestratorReply(
                 request_id=request.request_id,
                 status=status,
@@ -549,17 +551,27 @@ class Orchestrator:
         elapsed_ms = int((self.clock() - started) * 1000)
         return elapsed_ms - (previous or 0)
 
-    def _semantic_cache_partition_key(self, docs: list[Any]) -> str:
-        """Partition key = sorted retrieved chunk IDs, joined.
+    def _semantic_cache_partition_key(self, docs: list[Any], request: UserRequest) -> str:
+        """Partition key = ``ws:<workspace_id>|<sorted chunk ids>``.
 
-        Queries answered against disjoint doc sets must not share a cache
-        entry — otherwise the same question across two tenants' docs
-        would bleed. When no docs were retrieved, we use a sentinel so
-        un-grounded answers bucket together.
+        Two layers of isolation, both required:
+
+          1. ``workspace_id`` (from ``request.metadata`` set by the API
+             layer in tenant-aware mode) — so even if two tenants happen
+             to be retrieving the same chunk IDs from a shared external
+             RAG, their cache entries don't collide.
+          2. The sorted chunk ID set — so the same question answered
+             against different doc subsets in the *same* workspace
+             doesn't share a cache entry either.
+
+        Falls back to ``ws:none`` when no workspace is on the request
+        (legacy single-tenant flow).
         """
-        if not docs:
-            return "no-docs"
-        return "|".join(sorted(getattr(d, "chunk_id", "") for d in docs))
+        ws = request.metadata.get("workspace_id", "none") if request.metadata else "none"
+        chunk_part = (
+            "|".join(sorted(getattr(d, "chunk_id", "") for d in docs)) if docs else "no-docs"
+        )
+        return f"ws:{ws}|{chunk_part}"
 
     def _try_semantic_cache_lookup(
         self,
@@ -574,7 +586,7 @@ class Orchestrator:
         Returns None on MISS or when the cache isn't configured."""
         if self.semantic_cache is None:
             return None
-        partition = self._semantic_cache_partition_key(docs)
+        partition = self._semantic_cache_partition_key(docs, request)
         result = self.semantic_cache.lookup(query=query, partition_key=partition)
         if not isinstance(result, CacheHit):
             return None
@@ -603,10 +615,11 @@ class Orchestrator:
         query: str,
         docs: list[Any],
         response: ModelResponse,
+        request: UserRequest,
     ) -> None:
         if self.semantic_cache is None:
             return
-        partition = self._semantic_cache_partition_key(docs)
+        partition = self._semantic_cache_partition_key(docs, request)
         self.semantic_cache.store(
             query=query,
             partition_key=partition,

@@ -89,6 +89,15 @@ from meridian_semantic_cache import (
 )
 from meridian_session_store import InMemorySessionStore, RedisSessionStore, SessionStore
 from meridian_telemetry import OTelExporter, Tracer
+from meridian_tool_executor import (
+    JiraConfig,
+    JiraCreateTicketTool,
+    JiraLookupStatusTool,
+    SlackConfig,
+    SlackSendMessageTool,
+    ToolExecutor,
+    ToolRegistry,
+)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -149,6 +158,7 @@ class CapabilityReport:
     tenant_aware: bool = False
     otel_enabled: bool = False
     internal_auth: str = "unknown"
+    tools: list[str] = field(default_factory=list)
 
     def to_safe_dict(self) -> dict[str, object]:
         """Redacted view safe to expose at /debug/config."""
@@ -169,6 +179,7 @@ class CapabilityReport:
             "tenant_aware": self.tenant_aware,
             "otel_enabled": self.otel_enabled,
             "internal_auth": self.internal_auth,
+            "tools": list(self.tools),
         }
 
 
@@ -475,6 +486,37 @@ def build_admin_override() -> AdminOverride:
 
 
 # ---------------------------------------------------------------------------
+# Tool executor — Jira + Slack tools registered when their env vars exist
+# ---------------------------------------------------------------------------
+# Registration is opt-in per tool. A misconfigured Slack token would let the
+# orchestrator advertise a ``send_message`` tool it can't actually invoke,
+# so we only register a tool when its credentials are present. Operators
+# can audit which tools are live via the capability report's ``tools``
+# field.
+def build_tool_executor(report: CapabilityReport) -> ToolExecutor | None:
+    registry = ToolRegistry()
+    enabled: list[str] = []
+
+    # mypy reports a Tool/ClassVar Protocol mismatch on the registered tool
+    # types — runtime is fine; the Protocol is structural and the concrete
+    # tools satisfy ``name``, ``schema``, ``requires_confirmation`` and
+    # ``execute`` as declared. Suppression scoped to the registration lines.
+    if os.environ.get("JIRA_BASE_URL") and os.environ.get("JIRA_API_TOKEN"):
+        cfg = JiraConfig.from_env()
+        registry.register(JiraLookupStatusTool(config=cfg))  # type: ignore[arg-type]
+        registry.register(JiraCreateTicketTool(config=cfg))  # type: ignore[arg-type]
+        enabled.extend(["jira.lookup_status", "jira.create_ticket"])
+    if os.environ.get("SLACK_BOT_TOKEN"):
+        registry.register(SlackSendMessageTool(config=SlackConfig.from_env()))  # type: ignore[arg-type]
+        enabled.append("slack.send_message")
+
+    report.tools = enabled
+    if not enabled:
+        return None
+    return ToolExecutor(registry=registry)
+
+
+# ---------------------------------------------------------------------------
 # Tracer
 # ---------------------------------------------------------------------------
 def build_tracer(report: CapabilityReport) -> Tracer:
@@ -504,6 +546,7 @@ def build_orchestrator(report: CapabilityReport) -> Orchestrator:
         semantic_cache=build_semantic_cache(report),
         input_guardrails=build_input_guardrails(report),
         output_guardrails=build_output_guardrails(report),
+        tool_executor=build_tool_executor(report),
         config=OrchestratorConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     )
 
@@ -568,6 +611,17 @@ def build_app_from_env() -> tuple[FastAPI, CapabilityReport]:
     admin_override = build_admin_override()
     ingestion_service = build_ingestion_service(report)
 
+    # Per-workspace budget enforcement. The DailyTracker is shared between
+    # the breaker (read path) and the api handler (write path).
+    daily_tracker = build_daily_tracker()
+    workspace_breaker = build_workspace_breaker(daily_tracker)
+    if workspace_breaker is not None:
+        report.cost_breaker_backend = (
+            "redis_workspace"
+            if isinstance(daily_tracker, RedisDailyTracker)
+            else "in_process_workspace"
+        )
+
     factory = build_session_factory()
     session_service: SessionService | None = None
     require_caller: Callable[..., CallerContext] | None = None
@@ -607,6 +661,8 @@ def build_app_from_env() -> tuple[FastAPI, CapabilityReport]:
         capability_report=report,
         readiness_check=build_readiness_check(orchestrator),
         ingestion_service=ingestion_service,
+        workspace_breaker=workspace_breaker,
+        daily_tracker=daily_tracker,
     )
     logger.info("meridian orchestrator wired: %s", report.to_safe_dict())
     return app, report

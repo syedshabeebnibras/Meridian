@@ -40,6 +40,10 @@ if TYPE_CHECKING:
 from fastapi import Depends, FastAPI, HTTPException, Path
 from fastapi.responses import PlainTextResponse, Response
 from meridian_contracts import UserRequest
+from meridian_cost_accounting import (
+    DailyTracker,
+    WorkspaceCostBreaker,
+)
 from meridian_feature_flags import RolloutService
 from meridian_ingestion import WORKSPACE_ID, IngestionError, IngestionService
 from meridian_ops import RateLimiter, RateLimitExceededError
@@ -180,6 +184,8 @@ def build_app(
     audit_sink: AuditSink | None = None,
     capability_report: CapabilityReport | None = None,
     ingestion_service: IngestionService | None = None,
+    workspace_breaker: WorkspaceCostBreaker | None = None,
+    daily_tracker: DailyTracker | None = None,
 ) -> FastAPI:
     """Build the FastAPI app.
 
@@ -257,6 +263,24 @@ def build_app(
                         headers={"Retry-After": "1"},
                     ) from rle
 
+            # Per-workspace cost breaker. Hard-refuse with 402 when the raw
+            # daily budget is exceeded — the global cost circuit breaker
+            # (state on the orchestrator) handles the *softer* frontier→mid
+            # degradation; this layer is the hard ceiling.
+            if (
+                workspace_breaker is not None
+                and not override.budget_exempt(ws_id)
+                and workspace_breaker.is_over_budget(ws_id)
+            ):
+                metrics.COST_BREAKER_OPEN_TOTAL.labels(workspace=ws_id).inc()
+                raise HTTPException(
+                    status_code=402,
+                    detail=(
+                        f"workspace {ws_id} has exceeded its daily budget; "
+                        "requests resume at 00:00 UTC"
+                    ),
+                )
+
             user_request = UserRequest(
                 request_id=f"req_{uuid.uuid4().hex[:24]}",
                 user_id=str(caller.user_id),
@@ -302,6 +326,20 @@ def build_app(
             metrics.REQUESTS_TOTAL.labels(status=reply.status.value).inc()
             if reply.cost_usd is not None:
                 metrics.COST_USD_TOTAL.inc(reply.cost_usd)
+
+            # Record per-workspace spend so the next request through this
+            # workspace sees the updated total (and trips the breaker once
+            # the budget is exhausted). We charge regardless of degraded
+            # status — degraded answers still cost money on the cheaper tier.
+            if daily_tracker is not None and reply.cost_usd:
+                daily_tracker.record(ws_id, Decimal(str(reply.cost_usd)))
+                # If recording this request crossed the soft (1.5x) overrun
+                # ratio, surface it as a metric so dashboards can alarm.
+                if (
+                    workspace_breaker is not None
+                    and workspace_breaker.state_for(ws_id).value == "open"
+                ):
+                    metrics.BUDGET_DEGRADED_TOTAL.labels(workspace=ws_id).inc()
 
             # Persist the exchange (messages + audit event + usage record).
             if reply.status.value == "ok":

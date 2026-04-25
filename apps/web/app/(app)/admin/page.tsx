@@ -99,7 +99,7 @@ export default async function AdminPage() {
               <Gate label="Guardrails wired (input + output)" status="pass" />
               <Gate label="Audit sink durable (Postgres)" status="depends" hint="Set DATABASE_URL" />
               <Gate label="Distributed rate limiter" status="depends" hint="Set REDIS_URL" />
-              <Gate label="Document ingestion (Phase 6)" status="pending" />
+              <Gate label="Document ingestion (Phase 6)" status="pass" />
             </ul>
           </CardContent>
         </Card>
