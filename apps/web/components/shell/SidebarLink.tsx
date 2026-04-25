@@ -5,13 +5,17 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
+// We accept the icon as pre-rendered JSX (``ReactNode``), not a component
+// reference — React Server Components can serialise JSX into a client
+// component's props, but cannot serialise a function/component type.
+// The parent AppShell renders ``<Icon />`` server-side and passes the node.
 interface Props {
   href: string;
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: React.ReactNode;
   children: React.ReactNode;
 }
 
-export function SidebarLink({ href, icon: Icon, children }: Props) {
+export function SidebarLink({ href, icon, children }: Props) {
   const pathname = usePathname();
   // Match both ``/dashboard`` exactly and any nested ``/dashboard/...`` so
   // child pages (e.g. /settings/members) keep the parent highlighted.
@@ -27,7 +31,7 @@ export function SidebarLink({ href, icon: Icon, children }: Props) {
           : "text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-elevated)]/60 hover:text-[var(--color-fg)]"
       )}
     >
-      <Icon className="size-4" aria-hidden />
+      {icon}
       {children}
     </Link>
   );

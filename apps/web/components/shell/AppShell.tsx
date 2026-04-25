@@ -78,11 +78,20 @@ export function AppShell({ ctx, workspaceName, children }: Props) {
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-3" aria-label="Sections">
-          {items.map((item) => (
-            <SidebarLink key={item.href} href={item.href} icon={item.icon}>
-              {item.label}
-            </SidebarLink>
-          ))}
+          {items.map((item) => {
+            // Pre-render the icon server-side; the client SidebarLink only
+            // ever sees serialisable JSX, never a component reference.
+            const Icon = item.icon;
+            return (
+              <SidebarLink
+                key={item.href}
+                href={item.href}
+                icon={<Icon className="size-4" aria-hidden />}
+              >
+                {item.label}
+              </SidebarLink>
+            );
+          })}
         </nav>
 
         <div className="border-t border-[var(--color-border)]/60 p-3">
