@@ -2,7 +2,17 @@
 
 Enterprise knowledge assistant. Grounded Q&A, structured extraction, and tool-driven workflows over internal documentation — see [`meridian-execution-plan.md`](./meridian-execution-plan.md) for the full production plan.
 
-**Status: All 9 phases complete.** Phase 9 adds the semantic response cache (pgvector, cosine ≥ 0.95), weekly review tooling, dataset-expansion script, 30/60/90-day report templates, and a v2 roadmap drafted from Section 30's dependency graph. 199 tests pass. Live staging/prod deployment, the actual dogfood → beta → 100% rollout, and the 90-day KPI measurement all happen team-side against real production.
+**Status: production hardening in progress.** The 9 foundational phases are complete — semantic response cache (pgvector, cosine ≥ 0.95), weekly review tooling, dataset-expansion script, 30/60/90-day report templates, and the v2 roadmap drafted from Section 30's dependency graph.
+
+Phase 1 of the production-hardening sweep lands:
+- typed `ModelDispatchError` + real retry coverage (429/5xx/timeout now retry through the shipped `LiteLLMClient → RetryingClient → CircuitBreaker` stack);
+- enforced `X-Internal-Key` on `/v1/chat` + `/v1/feedback` with a two-flag dev escape hatch (fails closed in staging/prod);
+- Zod-validated Next.js proxy that rejects oversized payloads, strips browser-supplied identity, and regenerates `request_id` server-side;
+- Web app joins CI (typecheck · test · build).
+
+Subsequent phases (auth + tenant isolation, durable audit/feedback, distributed rate limiting, product shell, document ingestion, schema drift checks) are sequenced in [`tasks/web-plan.md`](./tasks/web-plan.md) and land in dedicated PRs.
+
+Test count as of Phase 1: **Python 222 / Web 10 / all green.**
 
 ---
 
