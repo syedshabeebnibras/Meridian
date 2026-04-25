@@ -65,9 +65,7 @@ class OpenAIEmbedding:
 
     def embed(self, text: str) -> list[float]:
         if not self.api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY not set; cannot call OpenAI embeddings API"
-            )
+            raise RuntimeError("OPENAI_API_KEY not set; cannot call OpenAI embeddings API")
         response = httpx.post(
             f"{self.base_url.rstrip('/')}/embeddings",
             headers={"Authorization": f"Bearer {self.api_key}"},

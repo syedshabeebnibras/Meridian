@@ -209,9 +209,7 @@ async def test_chat_returns_429_when_rate_limit_exceeded() -> None:
         first = await c.post("/v1/chat", json=payload)
         assert first.status_code == 200
 
-        second = await c.post(
-            "/v1/chat", json={**payload, "request_id": "req_rl002"}
-        )
+        second = await c.post("/v1/chat", json={**payload, "request_id": "req_rl002"})
         assert second.status_code == 429
         assert second.headers.get("retry-after") == "1"
 

@@ -232,4 +232,8 @@ app: FastAPI = build_app(
     config=AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging")),
     readiness_check=_readiness_check,
     rate_limiter=_build_rate_limiter(),
+    # InternalAuthConfig.from_env() is called inside build_app by default.
+    # Explicit here so it's obvious at import time that protected routes
+    # enforce X-Internal-Key; the call will raise InternalAuthConfigError
+    # if MERIDIAN_ENV is staging/production without ORCH_INTERNAL_KEY set.
 )

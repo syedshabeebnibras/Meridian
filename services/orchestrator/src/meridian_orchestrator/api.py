@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse, Response
 from meridian_contracts import UserRequest
 from meridian_feature_flags import RolloutService
@@ -28,6 +28,7 @@ from meridian_ops import RateLimitExceededError, TokenBucketRateLimiter
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_orchestrator import metrics
+from meridian_orchestrator.auth import InternalAuthConfig, build_require_internal_key
 from meridian_orchestrator.orchestrator import Orchestrator, OrchestratorReply
 
 
@@ -82,6 +83,7 @@ def build_app(
     rollout: RolloutService | None = None,
     feedback_store: FeedbackStore | None = None,
     rate_limiter: TokenBucketRateLimiter | None = None,
+    auth_config: InternalAuthConfig | None = None,
 ) -> FastAPI:
     """Build the FastAPI app.
 
@@ -92,8 +94,15 @@ def build_app(
 
     `rate_limiter`: optional per-user token-bucket. When provided, /v1/chat
     returns 429 with a Retry-After header if the user is over their burst.
+
+    `auth_config`: required for production boot. In tests, callers may pass
+    an explicit dev-mode config to skip header checks without touching
+    env vars. When omitted, the config is read from the environment and
+    may raise ``InternalAuthConfigError`` if misconfigured.
     """
     config = config or AppConfig(environment=os.environ.get("MERIDIAN_ENV", "staging"))
+    auth_config = auth_config or InternalAuthConfig.from_env()
+    require_internal_key = build_require_internal_key(auth_config)
 
     app = FastAPI(
         title="Meridian Orchestrator",
@@ -120,7 +129,7 @@ def build_app(
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
-    @app.post("/v1/chat", response_model=None)
+    @app.post("/v1/chat", response_model=None, dependencies=[Depends(require_internal_key)])
     def chat(request: UserRequest) -> OrchestratorReply:
         if rate_limiter is not None:
             try:
@@ -152,7 +161,11 @@ def build_app(
             metrics.COST_USD_TOTAL.inc(reply.cost_usd)
         return reply
 
-    @app.post("/v1/feedback", response_model=None)
+    @app.post(
+        "/v1/feedback",
+        response_model=None,
+        dependencies=[Depends(require_internal_key)],
+    )
     def feedback(request: FeedbackRequest) -> FeedbackAck:
         if feedback_store is None:
             raise HTTPException(status_code=501, detail="feedback collection not configured")

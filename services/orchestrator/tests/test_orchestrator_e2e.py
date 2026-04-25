@@ -517,9 +517,7 @@ def test_session_store_skipped_when_history_provided_inline() -> None:
         session_id="s_1",
         query="P1 outage?",
         conversation_history=[
-            ConversationTurn(
-                role="user", content="earlier turn", timestamp=datetime.now(tz=UTC)
-            )
+            ConversationTurn(role="user", content="earlier turn", timestamp=datetime.now(tz=UTC))
         ],
     )
     reply = orch.handle(req)

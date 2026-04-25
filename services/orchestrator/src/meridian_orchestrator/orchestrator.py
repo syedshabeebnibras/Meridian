@@ -305,9 +305,7 @@ class Orchestrator:
                 and tier is ModelTier.FRONTIER
                 and self.cost_breaker.state is CostBreakerState.OPEN
             ):
-                state.errors.append(
-                    "cost_breaker_open: degraded frontier → mid"
-                )
+                state.errors.append("cost_breaker_open: degraded frontier → mid")
                 tier = ModelTier.MID
 
             # Semantic cache: partition by the sorted retrieved chunk IDs so
@@ -406,9 +404,7 @@ class Orchestrator:
             cost_usd = self._account_cost(model_response, request.user_id)
             if status is OrchestratorStatus.OK:
                 self._persist_turns(request, model_response)
-                self._store_in_semantic_cache(
-                    effective_query, retrieval.results, model_response
-                )
+                self._store_in_semantic_cache(effective_query, retrieval.results, model_response)
             return OrchestratorReply(
                 request_id=request.request_id,
                 status=status,
