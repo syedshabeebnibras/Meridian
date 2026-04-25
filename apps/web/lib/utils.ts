@@ -18,16 +18,6 @@ export function formatCost(usd: number | undefined | null): string {
   return `$${usd.toFixed(3)}`;
 }
 
-export function generateReqId(): string {
-  // orchestrator validates ^req_[a-zA-Z0-9]+$
-  const rand = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-  return `req${rand}`.replace(/[^a-zA-Z0-9]/g, "");
-}
-
-export function prefixedReqId(): string {
-  return `req_${generateReqId().slice(0, 16)}`;
-}
-
 export function generateSessionId(): string {
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   return `s_${rand}`;

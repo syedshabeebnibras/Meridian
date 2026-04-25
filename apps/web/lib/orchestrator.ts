@@ -2,9 +2,18 @@
 // The browser never hits the orchestrator directly — keeps the internal
 // URL server-side.
 
-import type { OrchestratorReply, UserRequest } from "./types";
+import type { ChatRequestInput } from "./validation";
+import type { OrchestratorReply } from "./types";
 
-export async function sendChat(payload: UserRequest): Promise<OrchestratorReply> {
+/**
+ * Send a chat message through the validated proxy.
+ *
+ * The browser submits only `query + session_id + optional metadata`. The
+ * Next.js server boundary generates request_id, stamps user_id, and
+ * forwards X-Internal-Key to the orchestrator. This means a malicious
+ * browser can't claim a different user_id or replay request_ids.
+ */
+export async function sendChat(payload: ChatRequestInput): Promise<OrchestratorReply> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -4,8 +4,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { RateLimitError, extractAnswer, sendChat } from "./orchestrator";
-import type { Session, UIMessage, UserRequest } from "./types";
-import { generateSessionId, prefixedReqId } from "./utils";
+import type { Session, UIMessage } from "./types";
+import type { ChatRequestInput } from "./validation";
+import { generateSessionId } from "./utils";
 
 interface ChatState {
   sessions: Record<string, Session>;
@@ -122,12 +123,13 @@ export const useChatStore = create<ChatState>()(
           };
         });
 
-        const payload: UserRequest = {
-          request_id: prefixedReqId(),
-          user_id: "u_web",
-          session_id: sessionId,
+        // The browser only sends intent fields. The Next.js proxy at
+        // /api/chat generates request_id, stamps user_id from the (future)
+        // authenticated session, adds X-Internal-Key, and forwards to the
+        // orchestrator. See apps/web/app/api/chat/route.ts + lib/validation.ts.
+        const payload: ChatRequestInput = {
           query: trimmed,
-          conversation_history: [],
+          session_id: sessionId,
           metadata: { source: "web" },
         };
 
