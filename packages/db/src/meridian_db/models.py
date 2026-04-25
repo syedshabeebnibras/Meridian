@@ -430,6 +430,67 @@ class UsageRecordRow(Base):
     )
 
 
+class DocumentRow(Base):
+    """Uploaded source file. One per document, workspace-scoped."""
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint("status IN ('indexing', 'indexed', 'failed')", name="ck_documents_status"),
+        Index("ix_documents_workspace_created", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_uri: Mapped[str | None] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="indexed")
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DocumentChunkRow(Base):
+    """A single chunk of a document. Embedding column is pgvector and
+    declared in raw SQL by migration 0007 — we don't bind a vector type
+    here because SQLAlchemy core doesn't ship one. Rows are created via
+    raw INSERTs from ``meridian_ingestion``."""
+
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        Index("ix_document_chunks_workspace", "workspace_id"),
+        Index("ix_document_chunks_document", "document_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class RequestFeedbackRow(Base):
     """Durable sink for /v1/feedback (Phase 3).
 

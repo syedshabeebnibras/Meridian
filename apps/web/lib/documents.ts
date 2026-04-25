@@ -16,6 +16,8 @@ export interface DocumentRow {
   title: string;
   status: DocumentStatus;
   chunk_count: number;
+  byte_size: number;
+  mime_type: string;
   created_at: string;
 }
 
@@ -25,7 +27,7 @@ export async function listDocumentsSafe(workspaceId: string): Promise<DocumentRo
   if (_documentsTableMissing) return [];
   try {
     const { rows } = await pool.query<DocumentRow>(
-      `SELECT id::text, title, status, chunk_count, created_at::text
+      `SELECT id::text, title, status, chunk_count, byte_size, mime_type, created_at::text
        FROM documents
        WHERE workspace_id = $1
        ORDER BY created_at DESC

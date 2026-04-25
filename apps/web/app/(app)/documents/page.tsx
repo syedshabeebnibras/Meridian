@@ -1,7 +1,7 @@
-import { FileText, Upload } from "lucide-react";
+import { FileText } from "lucide-react";
 
+import { UploadForm } from "@/components/documents/UploadForm";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { listDocumentsSafe } from "@/lib/documents";
 import { requireSession } from "@/lib/session-guard";
@@ -26,10 +26,7 @@ export default async function DocumentsPage() {
             Knowledge base for grounded answers. Tenant-scoped to this workspace.
           </p>
         </div>
-        <Button variant="primary" disabled aria-disabled className="gap-1">
-          <Upload className="size-4" aria-hidden />
-          Upload PDF or text
-        </Button>
+        <UploadForm />
       </header>
 
       <Card>

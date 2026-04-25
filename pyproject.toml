@@ -25,6 +25,7 @@ dependencies = [
     "meridian-retrieval-client",
     "meridian-tool-executor",
     "meridian-evaluator",
+    "meridian-ingestion",
 ]
 
 [dependency-groups]
@@ -75,6 +76,7 @@ meridian-model-gateway     = { workspace = true }
 meridian-retrieval-client  = { workspace = true }
 meridian-tool-executor     = { workspace = true }
 meridian-evaluator         = { workspace = true }
+meridian-ingestion         = { workspace = true }
 
 # ---------------------------------------------------------------------------
 # Ruff — lint + format

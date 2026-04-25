@@ -19,7 +19,9 @@ dependencies = [
     "meridian-semantic-cache",
     "meridian-tool-executor",
     "meridian-db",
+    "meridian-ingestion",
     "fastapi>=0.115.0",
+    "python-multipart>=0.0.20",
     "uvicorn[standard]>=0.32.0",
     "prometheus-client>=0.21.0",
 ]
