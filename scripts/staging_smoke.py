@@ -92,8 +92,7 @@ def _seed_tenant() -> bool:
         return False
     with psycopg.connect(db_url) as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO users (id, email, name) VALUES (%s, %s, %s) "
-            "ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO users (id, email, name) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
             (SMOKE_USER_ID, "smoke@meridian.ci", "Smoke"),
         )
         cur.execute(
@@ -136,9 +135,10 @@ def _request_tenant(url: str, session_id: str, query: str) -> dict[str, Any] | N
             timeout=60.0,
         )
         response.raise_for_status()
-        return response.json()
     except httpx.HTTPError:
         return None
+    body: dict[str, Any] = response.json()
+    return body
 
 
 def _request_legacy(url: str, query: str) -> dict[str, Any] | None:
