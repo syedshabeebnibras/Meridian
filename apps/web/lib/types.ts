@@ -1,7 +1,31 @@
-// Mirror of the subset of orchestrator contracts the UI consumes.
-// Keep in sync with packages/contracts/src/meridian_contracts/* and
-// services/orchestrator/src/meridian_orchestrator/api.py.
+// Frontend type surface.
+//
+// Wire types that originate from the Python ``meridian_contracts`` package
+// are *generated* — the source of truth lives in Pydantic, schemas are
+// emitted by ``scripts/export_schemas.py``, and ``apps/web/scripts/
+// generate-types.mjs`` turns them into TypeScript under ``./generated/``.
+//
+// Anything in this file is either:
+//   1. UI-only (renders / state shape that has no Python equivalent).
+//   2. Domain types that live on the orchestrator, not the contracts
+//      package (e.g. ``OrchestratorReply``, ``GroundedQAContent``).
+//
+// CI runs ``pnpm gen-types`` and fails on ``git diff --exit-code`` so the
+// generated types can never silently drift.
 
+// --- Re-exports from generated contracts ----------------------------------
+export type {
+  ModelResponse,
+  ModelUsage,
+  OrchestrationState,
+  RetrievalSummary,
+  TimingsMs,
+  ConversationTurn,
+  RetrievedChunk,
+  ClassificationResult,
+} from "./generated";
+
+// --- Orchestrator-specific (not in contracts) -----------------------------
 export type OrchestratorStatus =
   | "ok"
   | "refused"
@@ -24,62 +48,21 @@ export interface GroundedQAContent {
   needs_escalation: boolean;
 }
 
-export interface ModelUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
-}
-
-export interface ModelResponse {
-  id: string;
-  model: string;
-  content: GroundedQAContent | string | Record<string, unknown>;
-  usage: ModelUsage;
-  latency_ms: number;
-}
-
-export interface Classification {
-  intent: string;
-  confidence: number;
-  model_tier: string;
-  workflow: string;
-}
-
-export interface RetrievalSummary {
-  query_rewritten: string;
-  chunks_retrieved: number;
-  chunks_after_rerank: number;
-  top_relevance_score: number;
-}
-
-export interface TimingsMs {
-  classification?: number;
-  retrieval?: number;
-  total?: number;
-}
-
-export interface OrchestrationState {
-  request_id: string;
-  current_state: string;
-  classification: Classification | null;
-  retrieval: RetrievalSummary | null;
-  timings_ms: TimingsMs;
-  errors: string[];
-}
+import type {
+  ModelResponse as _ModelResponse,
+  OrchestrationState as _OrchestrationState,
+} from "./generated";
 
 export interface OrchestratorReply {
   request_id: string;
   status: OrchestratorStatus;
-  model_response: ModelResponse | null;
-  orchestration_state: OrchestrationState;
+  model_response: _ModelResponse | null;
+  orchestration_state: _OrchestrationState;
   error_message?: string | null;
   cost_usd?: number | null;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 2: server-side sessions
-// ---------------------------------------------------------------------------
+// --- Server-side persistence (defined by /v1/sessions endpoints) ----------
 export interface ServerSession {
   id: string;
   workspace_id: string;
@@ -98,7 +81,7 @@ export interface ServerMessage {
   created_at: string;
 }
 
-// Client-side representation of a UI message (what the chat renders).
+// --- UI-only -------------------------------------------------------------
 export interface UIMessage {
   id: string;
   role: "user" | "assistant";

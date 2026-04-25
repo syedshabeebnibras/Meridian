@@ -41,7 +41,7 @@ export function InsightPanel({ reply }: { reply: OrchestratorReply }) {
   const cls = state.classification;
   const cacheHit = isCacheHit(reply);
   const citations = extractCitations(reply);
-  const totalMs = state.timings_ms.total;
+  const totalMs = state.timings_ms?.total ?? null;
 
   return (
     <motion.div

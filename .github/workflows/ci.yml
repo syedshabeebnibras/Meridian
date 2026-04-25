@@ -59,7 +59,8 @@ jobs:
             -p meridian_model_gateway \
             -p meridian_retrieval_client \
             -p meridian_tool_executor \
-            -p meridian_evaluator
+            -p meridian_evaluator \
+            -p meridian_ingestion
       - name: Mypy migrations
         run: uv run mypy migrations
 
@@ -236,8 +237,41 @@ jobs:
         if: always()
         run: kill "$(cat /tmp/orch.pid)" || true
 
+  web-types-drift:
+    name: Web types drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Sync workspace
+        run: uv sync --all-extras
+      - name: Install web deps
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Regenerate types
+        working-directory: apps/web
+        run: pnpm gen-types
+      - name: Fail if generated types are stale
+        run: |
+          if ! git diff --exit-code apps/web/lib/generated; then
+            echo "::error::apps/web/lib/generated is out of sync with the Python contracts. Run 'pnpm gen-types' from apps/web and commit the result."
+            exit 1
+          fi
+
   web:
-    name: Web app (typecheck · test · build)
+    name: Web app (typecheck · lint · test · build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -256,6 +290,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck
         run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
       - name: Test
         run: pnpm test
       - name: Build
