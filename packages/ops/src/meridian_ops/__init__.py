@@ -17,7 +17,12 @@ from meridian_ops.errors import (
     ValidationFaithfulnessError,
     ValidationSchemaError,
 )
-from meridian_ops.rate_limit import RateLimitExceededError, TokenBucketRateLimiter
+from meridian_ops.rate_limit import (
+    RateLimiter,
+    RateLimitExceededError,
+    RedisTokenBucketRateLimiter,
+    TokenBucketRateLimiter,
+)
 
 __all__ = [
     "ClassificationError",
@@ -27,6 +32,8 @@ __all__ = [
     "ProviderError",
     "ProviderRateLimitedError",
     "RateLimitExceededError",
+    "RateLimiter",
+    "RedisTokenBucketRateLimiter",
     "RetrievalError",
     "TimeoutError",
     "TokenBucketRateLimiter",

@@ -37,6 +37,9 @@ dev = [
     "httpx>=0.28.0",
     "types-PyYAML>=6.0",
     "types-jsonschema>=4.23",
+    "fakeredis>=2.35.1",
+    "lupa>=2.0",
+    "alembic>=1.14.0",
 ]
 migrations = [
     "alembic>=1.14.0",

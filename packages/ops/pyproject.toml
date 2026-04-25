@@ -5,6 +5,7 @@ description = "Operational primitives — rate limiter + error taxonomy (Section
 requires-python = ">=3.12"
 dependencies = [
     "meridian-contracts",
+    "redis>=5.0",
 ]
 
 [build-system]

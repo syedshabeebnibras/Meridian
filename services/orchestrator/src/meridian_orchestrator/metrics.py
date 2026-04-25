@@ -39,13 +39,28 @@ COST_USD_TOTAL = Counter(
 
 RATE_LIMITED_TOTAL = Counter(
     "meridian_rate_limited_total",
-    "Requests rejected at the edge by the per-user rate limiter.",
+    "Requests rejected at the edge by the per-(workspace, user, action) rate limiter.",
+    labelnames=("workspace", "action"),
     registry=REGISTRY,
 )
 
 CIRCUIT_OPEN_TOTAL = Counter(
     "meridian_circuit_open_total",
     "Requests that short-circuited because the provider breaker was open.",
+    registry=REGISTRY,
+)
+
+COST_BREAKER_OPEN_TOTAL = Counter(
+    "meridian_cost_breaker_open_total",
+    "Times a request observed the workspace cost breaker open.",
+    labelnames=("workspace",),
+    registry=REGISTRY,
+)
+
+BUDGET_DEGRADED_TOTAL = Counter(
+    "meridian_budget_degraded_total",
+    "Frontier requests degraded to mid because the workspace breaker was open.",
+    labelnames=("workspace",),
     registry=REGISTRY,
 )
 

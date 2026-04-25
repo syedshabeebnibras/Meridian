@@ -2,8 +2,8 @@
 
 - USD rate table per model
 - CostAccountant computes per-request cost from ModelResponse.usage
-- PerUserDailyTracker tracks per-user daily spend (in-memory)
-- CostCircuitBreaker blocks frontier requests when daily spend > 150% budget
+- PerUserDailyTracker / RedisDailyTracker track per-(user|workspace) daily spend
+- CostCircuitBreaker / WorkspaceCostBreaker block frontier when over budget
 """
 
 from meridian_cost_accounting.accountant import (
@@ -16,8 +16,14 @@ from meridian_cost_accounting.breaker import (
     CostBreakerOpenError,
     CostBreakerState,
     CostCircuitBreaker,
+    WorkspaceCostBreaker,
 )
-from meridian_cost_accounting.tracker import PerUserDailyTracker, UserSpend
+from meridian_cost_accounting.tracker import (
+    DailyTracker,
+    PerUserDailyTracker,
+    RedisDailyTracker,
+    UserSpend,
+)
 
 __all__ = [
     "CostAccountant",
@@ -25,8 +31,11 @@ __all__ = [
     "CostBreakerOpenError",
     "CostBreakerState",
     "CostCircuitBreaker",
+    "DailyTracker",
     "ModelRate",
     "PerUserDailyTracker",
+    "RedisDailyTracker",
     "UserSpend",
+    "WorkspaceCostBreaker",
     "default_rates",
 ]
