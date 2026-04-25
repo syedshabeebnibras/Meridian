@@ -1,8 +1,11 @@
 // Flat ESLint config for the Next.js 15 web app.
-//
-// Next.js 16 deprecates ``next lint`` so we run ESLint directly. This is a
-// minimal viable config — TypeScript compiler does the heavy lifting via
-// ``pnpm typecheck``. Add rules here as the codebase grows.
+
+import { createRequire } from "node:module";
+import path from "node:path";
+
+const require = createRequire(import.meta.url);
+const nextConfigDir = path.dirname(require.resolve("eslint-config-next/package.json"));
+const nextPlugin = require(path.join(nextConfigDir, "../@next/eslint-plugin-next"));
 
 export default [
   {
@@ -14,4 +17,6 @@ export default [
       "next-env.d.ts",
     ],
   },
+  nextPlugin.flatConfig.recommended,
+  nextPlugin.flatConfig.coreWebVitals,
 ];

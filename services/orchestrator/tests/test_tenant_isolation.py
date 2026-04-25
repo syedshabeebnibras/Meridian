@@ -43,6 +43,7 @@ from meridian_orchestrator.sessions import SessionService
 from meridian_retrieval_client import MockRetrievalClient
 from meridian_retrieval_client.mock import FixtureEntry
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 DATABASE_URL = os.environ.get(
@@ -52,7 +53,15 @@ DATABASE_URL = os.environ.get(
 
 @pytest.fixture(scope="module")
 def engine():  # type: ignore[no-untyped-def]
-    return create_engine(DATABASE_URL, future=True)
+    engine = create_engine(DATABASE_URL, future=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except OperationalError as exc:
+        engine.dispose()
+        pytest.skip(f"postgres unavailable at {DATABASE_URL}: {exc}", allow_module_level=False)
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture(scope="module")

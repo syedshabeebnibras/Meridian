@@ -19,6 +19,7 @@ fly secrets set \
   ANTHROPIC_API_KEY="sk-ant-..." \
   OPENAI_API_KEY="sk-..." \
   LITELLM_MASTER_KEY="sk-meridian-..." \
+  ORCH_INTERNAL_KEY="$(openssl rand -hex 32)" \
   DATABASE_URL="postgresql+psycopg://..." \
   LANGFUSE_PUBLIC_KEY="pk-..." \
   LANGFUSE_SECRET_KEY="sk-lf-..." \
@@ -36,6 +37,10 @@ scripts/deploy_staging.sh
 ```bash
 cp .env.example .env.staging
 # ...fill in .env.staging with real staging credentials...
+# For compose, set ORCHESTRATOR_DATABASE_URL to the container hostname:
+# ORCHESTRATOR_DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+# Keep DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5432/meridian
+# for host-run migration/bootstrap commands.
 
 docker compose \
   --env-file .env.staging \
@@ -116,6 +121,7 @@ to return 503 at startup or degrade gracefully.
 | `LITELLM_MASTER_KEY` | Gateway | Orchestrator → LiteLLM auth |
 | `LITELLM_BASE_URL` | Gateway | Location of shared proxy |
 | `DATABASE_URL` | Registry + evals + audit | Everything DB-backed |
+| `ORCH_INTERNAL_KEY` | Orchestrator + web | Shared internal API auth |
 | `REDIS_URL` | Session memory + rate limiter | Session continuity |
 | `RAG_BASE_URL` + `RAG_API_KEY` | Retrieval | Grounded Q&A |
 | `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` + `LANGFUSE_HOST` | Telemetry | Production trace export |
@@ -137,6 +143,7 @@ with a partial set while the team provisions the rest.
 - [ ] Fly.io account (or cloud target decided)
 - [ ] Supabase / Neon Postgres + `DATABASE_URL`
 - [ ] Upstash Redis + `REDIS_URL` (optional)
+- [ ] `ORCH_INTERNAL_KEY` generated and set on both orchestrator and Vercel
 - [ ] All provider API keys + LiteLLM master key
 - [ ] Langfuse v3 stack deployed (or hosted plan) + public/secret keys
 - [ ] Data Platform: staging RAG endpoint + API key

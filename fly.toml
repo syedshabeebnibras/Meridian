@@ -52,6 +52,7 @@ kill_timeout = "45s"  # matches Section 7 total-request timeout
 #   LITELLM_MASTER_KEY
 #   LITELLM_BASE_URL           (point at a shared LiteLLM proxy)
 #   DATABASE_URL               (Supabase / Neon Postgres)
+#   ORCH_INTERNAL_KEY          (shared secret also set in apps/web on Vercel)
 #   RAG_BASE_URL               (Data Platform's staging endpoint)
 #   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST
 #   JIRA_EMAIL / JIRA_API_TOKEN

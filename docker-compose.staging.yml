@@ -47,7 +47,10 @@ services:
       - "8080:8080"
     environment:
       MERIDIAN_ENV: staging
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Use ORCHESTRATOR_DATABASE_URL for compose so a host-local DATABASE_URL
+      # in .env.staging cannot accidentally point the container at itself.
+      DATABASE_URL: ${ORCHESTRATOR_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      ORCH_INTERNAL_KEY: ${ORCH_INTERNAL_KEY:?set ORCH_INTERNAL_KEY in .env.staging}
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LANGFUSE_HOST: http://langfuse-web:3000

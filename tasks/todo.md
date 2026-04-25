@@ -4,6 +4,82 @@ Active and historical task plans for the Meridian project. Every non-trivial tas
 
 ---
 
+## Full Project Audit for Vercel + Database Launch — status: done
+Date: 2026-04-25
+
+### Goal
+Read the project, identify errors and launch blockers, explain how to rectify them, and produce a reliable path to run the app, deploy it live on Vercel, connect a proper database, and improve project capability/accuracy.
+
+### Plan
+- [x] **1. Architecture inventory** — map root backend, `apps/web`, services, packages, env files, and deployment docs.
+- [x] **2. Backend verification** — run Python formatting/lint/type/test checks where available and capture concrete failures.
+- [x] **3. Web verification** — inspect Next.js app dependencies/config, then run install/lint/build checks where available.
+- [x] **4. Database readiness** — inspect migrations, ORM/database package, env variables, and production database expectations.
+- [x] **5. Vercel readiness** — identify web app deployment settings, required environment variables, and incompatible backend assumptions.
+- [x] **6. Accuracy/capability review** — inspect evaluation datasets, prompts, routing, and known TODOs for model quality improvements.
+- [x] **7. Final audit report** — list errors, impact, exact rectification steps, and a clean run/deploy sequence.
+
+### Verification approach
+- Prefer existing project commands (`make`, package scripts, pytest, lint/typecheck/build).
+- Record command evidence in the review section.
+- Do not make product code changes during the audit unless the user approves implementation after the findings.
+
+### Review
+
+**Verification results:**
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Python lint | ✅ pass | `env UV_CACHE_DIR=... make lint` → `All checks passed!` |
+| Python format | ✅ pass | `env UV_CACHE_DIR=... make fmt-check` → `153 files already formatted` |
+| Python typecheck | ✅ pass | `env UV_CACHE_DIR=... make type` → mypy clean across 93 source files + migrations |
+| Python tests | ✅ pass with DB access | `env UV_CACHE_DIR=... make test` outside sandbox → `294 passed in 3.85s` |
+| Python tests inside sandbox | ⚠️ environment-blocked | Same suite reported 12 tenant-isolation DB errors because localhost Postgres access was blocked |
+| Docker compose config | ✅ pass | `docker compose config --quiet` |
+| Web typecheck | ✅ pass | `pnpm typecheck` |
+| Web lint | ✅ pass, but weak config | `pnpm lint` passes; ESLint config only ignores files and does not load Next rules |
+| Web tests | ✅ pass | `pnpm test` → 14/14 tests |
+| Web build | ✅ pass with warnings | `pnpm build` succeeds; warns about Next ESLint plugin and local output tracing root |
+
+**Launch blockers found:**
+
+1. `ORCH_INTERNAL_KEY` must be configured everywhere for staging/production. The orchestrator fails closed without it, but staging compose/Fly docs do not fully wire it.
+2. Compose staging can inherit `.env.example`'s `localhost` `DATABASE_URL`, which is wrong inside containers. Compose services need the `postgres` host; local host tools need `localhost`.
+3. Fresh DB-backed staging needs prompt activation for the deployed environment: `scripts/bootstrap_prompts.py --activate --env staging` or `--env production`.
+4. Vercel env docs are incomplete. The web runtime needs `AUTH_SECRET`, `AUTH_URL`, `DATABASE_URL`/`DATABASE_URL_JS`, `MERIDIAN_ENV=production`, `ORCH_URL`, and `ORCH_INTERNAL_KEY`.
+5. Next build warns because `eslint.config.mjs` does not include the Next plugin. It is not blocking deployment, but lint coverage is currently too shallow.
+6. Local Next build warns about output file tracing root because a parent lockfile exists outside the repo. Vercel should avoid this if root is set to `apps/web`; otherwise set `outputFileTracingRoot`.
+7. Accuracy claims are still stub-backed unless live launch gates are run against real models, real retrieval, and calibrated judges.
+
+**Recommended next implementation pass:**
+
+- Patch deployment docs/env examples for the missing secrets and exact Vercel settings.
+- Add `ORCH_INTERNAL_KEY` to staging compose/orchestrator environment docs.
+- Make compose staging DB host unambiguous.
+- Add a `bootstrap-prompts-staging` or documented production bootstrap command.
+- Strengthen `apps/web/eslint.config.mjs` with Next's flat config.
+- Add an offline skip or integration marker for tenant-isolation tests if local no-DB test runs are required.
+
+
+## Fix Launch Blockers and Deploy — status: in progress
+Date: 2026-04-25
+
+### Goal
+Fix the launch blockers found in the audit, verify the project locally, and deploy the Next.js web app to Vercel if credentials/project linking are available.
+
+### Plan
+- [x] **1. Patch deployment wiring** — add missing `ORCH_INTERNAL_KEY` wiring, clarify database URLs, and document required Vercel env vars.
+- [x] **2. Patch web build hygiene** — strengthen ESLint config and avoid local output tracing root ambiguity.
+- [x] **3. Patch test ergonomics** — make DB-only tenant isolation tests skip cleanly when Postgres is unavailable.
+- [ ] **4. Verify locally** — run backend lint/type/tests and web typecheck/lint/tests/build.
+- [ ] **5. Deploy to Vercel** — use Vercel CLI from `apps/web`; stop with exact required action if auth/env/project linking blocks deployment.
+- [ ] **6. Record results** — append evidence, deployed URL or blocker, and remaining production steps.
+
+### Scope boundary
+- Do not add new product features in this pass.
+- Do not invent placeholder production secrets. Deployment can only be complete if real Vercel/database/orchestrator env vars exist.
+
+
 ## Phase 1 — Architecture and Contracts — status: done
 Date: 2026-04-20
 
